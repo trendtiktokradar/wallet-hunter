@@ -40,7 +40,9 @@ def detect_chain(addr):
 
 
 def norm(chain, a):
-    return a if chain == "solana" else a.lower()
+    # las direcciones Solana (base58) distinguen mayúsculas: solo se normalizan las EVM (0x…)
+    a = (a or "").strip()
+    return a.lower() if a[:2].lower() == "0x" else a
 
 
 class Scanner:
@@ -130,7 +132,14 @@ class Scanner:
     # ------------------------------------------------------------ wallets
     def scan_wallets(self, chain, wallets, prov=None, force=False):
         if chain in ("evm", "auto", None, ""):
-            chain = "ethereum"
+            # sin chain: las base58 son Solana y las 0x se tratan como Ethereum
+            sol = [w for w in wallets if not w.strip().lower().startswith("0x")]
+            evm = [w for w in wallets if w.strip().lower().startswith("0x")]
+            if sol and evm:
+                r1 = self.scan_wallets("solana", sol, force=force)
+                r2 = self.scan_wallets("ethereum", evm, force=force)
+                return {"chain": "solana+ethereum", "wallets": r1["wallets"] + r2["wallets"], "scanned": r1["scanned"] + r2["scanned"]}
+            chain = "solana" if sol else "ethereum"
         wallets = [norm(chain, w) for w in wallets]
         prov = prov or provider(chain)
         C = self.C

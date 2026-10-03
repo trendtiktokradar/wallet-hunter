@@ -52,6 +52,11 @@ class TestDeltas(unittest.TestCase):
         tx = rpc_tx("s4", 1, 1, A, native={A: (2, 1)}, tokens=[(A, MINT, 0, 5)], err={"x": 1})
         self.assertEqual(deltas.extract(deltas.from_rpc(tx), A), ([], []))
 
+    def test_norm_keeps_base58_case(self):
+        self.assertEqual(scan.norm("auto", "3Dgwn5E7H5a8k6iGrz3qirkaJqUaJrKHEZ2xPcLRpump"), "3Dgwn5E7H5a8k6iGrz3qirkaJqUaJrKHEZ2xPcLRpump")
+        self.assertEqual(scan.norm("auto", "0xABcd"), "0xabcd")
+        self.assertEqual(market._norm("solana", "AbC"), "AbC")
+
     def test_parse_items(self):
         txt = "https://dexscreener.com/solana/" + MINT + " , 0xAbCdEf0123456789abcdef0123456789ABCDEF01\nbasura"
         self.assertEqual(scan.parse_items(txt), [MINT, "0xAbCdEf0123456789abcdef0123456789ABCDEF01"])
@@ -167,6 +172,7 @@ class TestPipeline(unittest.TestCase):
         self.assertTrue(os.path.exists(os.environ["WH_DATA"]))
         wa = next(w for w in d["wallets"] if w["a"] == A)
         self.assertNotIn("al", wa)                      # alias privados: nunca en el json público
+        self.assertEqual(wa["ct"], [MINT])
         self.assertIn("lf", wa); self.assertIn("tr", wa); self.assertIn("fa", wa)
         self.assertEqual(d["chains"]["solana"]["exn"], "Solscan"); self.assertEqual(d["chains"]["ethereum"]["gmgn"], "eth")
 

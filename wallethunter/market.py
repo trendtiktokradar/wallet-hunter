@@ -33,7 +33,7 @@ def native_usd(chain):
 
 
 def _norm(chain, a):
-    return a if chain == "solana" else a.lower()
+    return a.lower() if (a or "")[:2].lower() == "0x" else a
 
 
 def dexscreener_tokens(chain, addresses):

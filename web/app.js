@@ -3,7 +3,7 @@
   "use strict";
   var CFG = window.WH_CONFIG;
   var D = null, BOX = null, BOX_OK = false;
-  var S = { sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
+  var S = { coin: "", pendingCoin: null, sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
   var FAVS = load("wh_favs", {});            // "chain:addr" -> {alias}
   var ALIASES = load("wh_aliases", {});      // "chain:addr" -> alias (privados: viven en el box, con PIN; aquí solo una copia local)
   var FRESH_DAYS = 7;
@@ -143,16 +143,61 @@
     h.push('<span class="src" title="' + esc(BOX ? "Box: " + (BOX_OK ? "encendido (escaneos desde la web disponibles)" : "no responde") : "Box sin túnel publicado") + '"><span class="dot ' + (BOX_OK ? "ok" : "bad") + '"></span>box</span>');
     $("sources").innerHTML = h.join("");
   }
-  function chainWallets() { return D.wallets.filter(function (w) { return !S.chain || w.c === S.chain; }); }
+  // ---- vista por coin: S.coin = "chain:CA"
+  function coinTok() { if (!S.coin || !D) return null; var i = S.coin.indexOf(":"), c = S.coin.slice(0, i), a = S.coin.slice(i + 1); return D.tokens.find(function (t) { return t.c === c && t.a === a; }) || null; }
+  function walletCoins(w) { return w.ct || w.or || []; }
+  function inCoin(w, t) { return w.c === t.c && walletCoins(w).indexOf(t.a) >= 0; }
+  function findTokenByCA(ca) { if (!D || !ca) return null; var l = ca.toLowerCase(); return D.tokens.find(function (t) { return t.a === ca || (t.a.slice(0, 2) === "0x" && t.a.toLowerCase() === l); }) || null; }
+  function coinBundles(t) { return D.bundles.filter(function (b) { return b.c === t.c && b.t === t.a; }); }
+  function coinLabel(t) { return (t.sy || short(t.a)) + " · " + chainName(t.c) + " · escaneado " + fmtDate(t.sa); }
+  function coinChips(w, max) {
+    var cur = coinTok(), cs = walletCoins(w), m = max || 4;
+    return cs.slice(0, m).map(function (a) { var k = w.c + ":" + a; return '<span class="coinchip' + (cur && cur.a === a ? " cur" : "") + '" data-coin="' + esc(k) + '" data-tip="Ver solo las wallets de ' + esc(tokenSym(w.c, a)) + '">' + esc(tokenSym(w.c, a)) + "</span>"; }).join("") + (cs.length > m ? '<span class="mini">+' + (cs.length - m) + "</span>" : "");
+  }
+  function setCoin(k) {
+    S.coin = k || ""; S.pendingCoin = null; S.limit = 300;
+    var t = coinTok();
+    var url = location.pathname + location.search + (t ? "#coin=" + encodeURIComponent(t.a) : "");
+    if (location.href.slice(location.href.indexOf(location.pathname)) !== url) history.replaceState(null, "", url);
+    renderAll();
+  }
+  function resolvePendingCoin() {
+    if (!S.pendingCoin || !D) return;
+    var t = findTokenByCA(S.pendingCoin);
+    if (t) { S.coin = t.c + ":" + t.a; S.pendingCoin = null; }
+  }
+  function fillCoins() {
+    var sel = $("coinSel"), toks = D.tokens.slice().sort(function (a, b) { return (b.sa || 0) - (a.sa || 0); });
+    var html = '<option value="">Todas (' + toks.length + ")</option>" + toks.map(function (t) { var k = t.c + ":" + t.a; return '<option value="' + esc(k) + '"' + (S.coin === k ? " selected" : "") + ">" + esc(coinLabel(t)) + "</option>"; }).join("");
+    if (S.pendingCoin) html += '<option value="" selected>' + esc(short(S.pendingCoin)) + " (aún sin datos)</option>";
+    if (sel._h !== html) { sel.innerHTML = html; sel._h = html; }
+  }
+  function tokenUrl(t) { return ((D.chains[t.c] || {}).explorer || "").replace("/account/", "/token/").replace("/address/", "/token/") + t.a; }
+  function renderCoinHead() {
+    var el = $("coinHead"), t = coinTok();
+    if (!t && !S.pendingCoin) { el.classList.add("hide"); el.innerHTML = ""; return; }
+    el.classList.remove("hide");
+    if (!t) { el.innerHTML = '<span class="sym">' + esc(short(S.pendingCoin)) + '</span><span class="muted">Esta coin todavía no está en los datos (¿escaneo en cola o en curso? Míralo en Trabajos).</span><button class="ghost right" data-coin="">✕ Ver todas las coins</button>'; return; }
+    var nw = chainWallets().length, kv = function (k, v) { return '<div class="kv2">' + k + "<b>" + v + "</b></div>"; };
+    el.innerHTML = '<div><div class="sym">' + esc(t.sy || "?") + ' <span class="chainpill">' + esc(chainName(t.c)) + '</span></div><div class="nm">' + esc(t.nm || "") + "</div></div>" +
+      '<div class="ca">' + esc(t.a) + ' <button class="copy" data-copy="' + esc(t.a) + '" title="Copiar CA">📋</button></div>' +
+      kv("Wallets", nw) + kv("Compradores tempranos", t.nb) + kv("Bundles", coinBundles(t).length) + kv("Lanzado", fmtDate(t.lt)) + kv("Escaneado", fmtDate(t.sa) + " (" + ago(t.sa) + ")") + kv("MC", t.mc ? "$" + num(t.mc, 0) : "–") +
+      '<div class="row small"><a class="xl" target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexScreener</a><a class="xl" target="_blank" rel="noopener" href="' + esc(tokenUrl(t)) + '">' + esc(exName(t.c)) + "</a></div>" +
+      '<button class="ghost right" data-coin="">✕ Ver todas las coins</button>';
+  }
+  function chainWallets() { var t = coinTok(); return D.wallets.filter(function (w) { return t ? inCoin(w, t) : (!S.chain || w.c === S.chain); }); }
   function renderCards() {
-    var ws = chainWallets(), st = D.stats;
+    var ws = chainWallets(), st = D.stats, ct = coinTok();
     var favs = ws.filter(isFav).length;
     var c = function (t, v, s, cls) { return '<div class="card"><div class="t">' + t + '</div><div class="v ' + (cls || "") + '">' + v + '</div><div class="s">' + (s || "") + "</div></div>"; };
     var ok = ws.filter(function (w) { return w.st !== "pending"; });
-    var nb = ws.filter(function (w) { return (w.bu || []).length; }).length;
-    var bundles = D.bundles.filter(function (b) { return !S.chain || b.c === S.chain; }).length;
-    var cls = D.clusters.filter(function (b) { return !S.chain || b.c === S.chain; }).length;
-    var toks = D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; });
+    var bl = ct ? coinBundles(ct) : D.bundles.filter(function (b) { return !S.chain || b.c === S.chain; });
+    var inB = {}; if (ct) bl.forEach(function (b) { b.w.forEach(function (a) { inB[a] = 1; }); });
+    var nb = ws.filter(function (w) { return ct ? inB[w.a] : (w.bu || []).length; }).length;
+    var bundles = bl.length;
+    var wset = {}; ws.forEach(function (w) { wset[w.a] = 1; });
+    var cls = D.clusters.filter(function (b) { return ct ? b.c === ct.c && b.w.some(function (a) { return wset[a]; }) : (!S.chain || b.c === S.chain); }).length;
+    var toks = ct ? [ct] : D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; });
     var tw = toks.filter(function (t) { return t.sa && NOW() - t.sa < D.window_days * 86400; }).length;
     $("cards").innerHTML =
       c("Wallets analizadas", ok.length, ws.filter(function (w) { return w.st === "pending"; }).length + " pendientes · " + ws.filter(function (w) { return w.st === "error"; }).length + " error · " + ws.filter(function (w) { return w.pf; }).length + " bots prefiltrados") +
@@ -160,8 +205,8 @@
       c("Smart money", count(ws, "smart"), "score ≥ 65 y rentables", "g") +
       c("Snipers · bots", count(ws, "sniper") + " · " + count(ws, "bot"), "", "y") +
       c("En bundle · bundlers", nb + " · " + count(ws, "fondeo_sync"), bundles + " bundles detectados · " + count(ws, "fondeo_sync") + " con fondeo sincronizado", "p") +
-      c("Clusters · vínculos", cls + " · " + (S.chain ? "" : D.stats.links), "fondeo común, transferencias, bundles", "b") +
-      c("Tokens escaneados · ventana", toks.length + " · " + D.window_days + "d", tw + " en ventana de " + D.window_days + " días");
+      c("Clusters · vínculos", cls + (S.chain || ct ? "" : " · " + D.stats.links), ct ? "clusters con wallets de " + esc(ct.sy || "esta coin") : "fondeo común, transferencias, bundles", "b") +
+      (ct ? c("Coin seleccionada", esc(ct.sy || "?"), esc(chainName(ct.c)) + " · escaneada " + ago(ct.sa)) : c("Tokens escaneados · ventana", toks.length + " · " + D.window_days + "d", tw + " en ventana de " + D.window_days + " días"));
   }
   function count(ws, tag) { return ws.filter(function (w) { return w.tg.indexOf(tag) >= 0; }).length; }
 
@@ -170,7 +215,6 @@
   function filtered(onlyFavs) {
     var q = $("fSearch").value.trim().toLowerCase(), sc = val("fScore"), pn = val("fPnl"), wr = val("fWr"), tk = val("fTok"), trd = val("fTrades"), fh = val("fFund"), fresh = $("fFresh").checked;
     var grp = $("fGroup").value, act = $("fAct").value, fav = $("fFav").checked || onlyFavs, hide = $("fHide").checked;
-    var origin = S.origin;
     return chainWallets().filter(function (w) {
       if (q && w.a.toLowerCase().indexOf(q) < 0 && (w.al || "").toLowerCase().indexOf(q) < 0 && !(G_IDX[w.a] || []).some(function (g) { return (g.name || "").toLowerCase().indexOf(q) >= 0; })) return false;
       if (sc != null && (w.sc || 0) < sc) return false;
@@ -188,7 +232,6 @@
       if (act && (!w.la || NOW() - w.la > act * 86400)) return false;
       if (fav && !isFav(w)) return false;
       if (hide && (w.tg.indexOf("bot") >= 0 || w.tg.indexOf("bundle") >= 0 || w.tg.indexOf("insider") >= 0 || w.pf)) return false;
-      if (origin && (w.or || []).indexOf(origin) < 0) return false;
       for (var i = 0; i < S.tags.length; i++) if (w.tg.indexOf(S.tags[i]) < 0) return false;
       return true;
     });
@@ -213,12 +256,12 @@
       ' <span class="muted small">→ ' + rows.length + " wallet" + (rows.length === 1 ? "" : "s") + '</span> <button class="clrtags right" id="clrTags">✕ Quitar filtros de etiquetas</button>';
   }
   var COLS = [
-    ["sel", '<input type="checkbox" class="selcb" id="selAll" title="Seleccionar todas las visibles">', "l"], ["fav", "⭐", "l"], ["i", "#", ""], ["a", "Wallet", "l"], ["x", "Ver en", "l"], ["c", "Chain", "l"], ["sc", "Score", ""], ["pn", "PnL nativo", ""], ["pu", "PnL USD", ""], ["roi", "ROI", ""],
+    ["sel", '<input type="checkbox" class="selcb" id="selAll" title="Seleccionar todas las visibles">', "l"], ["fav", "⭐", "l"], ["i", "#", ""], ["a", "Wallet", "l"], ["x", "Ver en", "l"], ["c", "Chain", "l"], ["ct", "Coins", "l"], ["sc", "Score", ""], ["pn", "PnL nativo", ""], ["pu", "PnL USD", ""], ["roi", "ROI", ""],
     ["wr", "Win rate", ""], ["tk", "Tokens", ""], ["tr", "Trades", ""], ["ho", "Hold med.", ""], ["en", "Entrada med.", ""], ["sz", "Tamaño med.", ""], ["bal", "Saldo", ""],
     ["ft", "Edad", ""], ["la", "Última act.", ""], ["cl", "Cluster / bundles", "l"], ["tg", "Etiquetas", "l"]
   ];
   var NOSORT = { x: 1, i: 1, sel: 1 };
-  var TIPS = { sel: "Marca wallets para exportarlas como grupo (Axiom / GMGN / CSV)", i: "🌱 = wallet fresca: primera transacción (o primer fondeo) hace menos de 7 días", x: "Abrir la wallet en el explorador de la chain y en GMGN (si la chain está soportada)", tr: "Nº total de trades (compras + ventas) en los últimos 30 días. '≥' = historial truncado, como mínimo", a: "Dirección y alias (✎ para editarlo; se guarda en tu box con PIN y se puede buscar)", pn: "PnL realizado + no realizado de los últimos 30 días, en la moneda nativa de la chain (SOL, ETH, BNB…)", pu: "PnL nativo × precio actual (Kraken)", roi: "PnL ÷ total invertido en compras", wr: "% de tokens con beneficio (entre paréntesis, nº de tokens)", ho: "Mediana del tiempo entre la primera compra y la venta", en: "Mediana del tiempo desde el lanzamiento del token hasta su primera compra", sz: "Compra media en moneda nativa", bal: "Saldo nativo actual", ft: "Antigüedad de la wallet (primera transacción). '>' = historial demasiado largo, como mínimo", sc: "Score 0-100: win rate, PnL, ROI, consistencia, nº de tokens y entrada temprana; penaliza bots, bundles, insiders y rugs" };
+  var TIPS = { ct: "Coins escaneados en los que participó (comprador temprano o con trades del token). Clic para ver solo esa coin", sel: "Marca wallets para exportarlas como grupo (Axiom / GMGN / CSV)", i: "🌱 = wallet fresca: primera transacción (o primer fondeo) hace menos de 7 días", x: "Abrir la wallet en el explorador de la chain y en GMGN (si la chain está soportada)", tr: "Nº total de trades (compras + ventas) en los últimos 30 días. '≥' = historial truncado, como mínimo", a: "Dirección y alias (✎ para editarlo; se guarda en tu box con PIN y se puede buscar)", pn: "PnL realizado + no realizado de los últimos 30 días, en la moneda nativa de la chain (SOL, ETH, BNB…)", pu: "PnL nativo × precio actual (Kraken)", roi: "PnL ÷ total invertido en compras", wr: "% de tokens con beneficio (entre paréntesis, nº de tokens)", ho: "Mediana del tiempo entre la primera compra y la venta", en: "Mediana del tiempo desde el lanzamiento del token hasta su primera compra", sz: "Compra media en moneda nativa", bal: "Saldo nativo actual", ft: "Antigüedad de la wallet (primera transacción). '>' = historial demasiado largo, como mínimo", sc: "Score 0-100: win rate, PnL, ROI, consistencia, nº de tokens y entrada temprana; penaliza bots, bundles, insiders y rugs" };
   function sortVal(w, k) {
     if (k === "fav") return isFav(w) ? 1 : 0;
     if (k === "ft") return w.ft ? -w.ft : null;
@@ -227,6 +270,7 @@
     if (k === "a") return w.al || w.a;
     if (k === "tr") return w.tr == null ? null : w.tr;
     if (k === "c") return w.c;
+    if (k === "ct") return walletCoins(w).length;
     return w[k];
   }
   function renderTable(onlyFavs) {
@@ -249,6 +293,7 @@
         '<td class="l">' + groupBadges(w) + '<span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button></td>' +
         '<td class="l nowrap">' + exLinks(w) + "</td>" +
         '<td class="l"><span class="chainpill">' + esc(chainName(w.c)) + "</span></td>" +
+        '<td class="l nowrap">' + coinChips(w, 3) + "</td>" +
         '<td><span class="score" style="background:' + scoreColor(w.sc) + '">' + (w.sc == null ? "–" : Math.round(w.sc)) + "</span></td>" +
         "<td>" + signed(w.pn, 2) + "</td><td>" + usd(w.pu) + "</td><td>" + (w.roi == null ? "–" : signed(w.roi * 100, 0, "%")) + "</td>" +
         "<td>" + (w.wr == null ? "–" : Math.round(w.wr * 100) + '% <span class="mini">(' + w.tk + ")</span>") + "</td>" +
@@ -385,7 +430,7 @@
       "<div>Bundles</div><div>" + ((w.bu || []).length || "–") + "</div>" +
       "<div>Copia a</div><div>" + (w.cp ? '<a href="#" data-open="' + esc(w.c + ":" + w.cp) + '">' + esc(short(w.cp)) + "</a>" : "–") + "</div>" +
       "<div>Mejor ranking temprano</div><div>" + (w.er ? "#" + w.er : "–") + "</div>" +
-      "<div>Vino de</div><div>" + (toks || "–") + "</div>" +
+      "<div>Coins escaneados</div><div>" + (walletCoins(w).length ? coinChips(w, 50) : "–") + "</div>" +
       "<div>Vínculos</div><div>" + (links || "–") + "</div>" +
       "<div>Escaneada</div><div>" + ago(w.ls) + (w.ht ? " · historial truncado" : "") + "</div></div>";
     $("drawer").classList.remove("hide");
@@ -395,7 +440,8 @@
   function tokenSym(c, a) { var t = D.tokens.find(function (x) { return x.a === a && x.c === c; }); return t && t.sy ? t.sy : short(a); }
   function walletLink(c, a) { var w = D.wIdx[c + ":" + a]; return '<a href="#" data-open="' + esc(c + ":" + a) + '" class="addr">' + esc(w && w.al ? w.al : short(a)) + "</a>" + (w && w.sc != null ? ' <span class="score" style="background:' + scoreColor(w.sc) + ';font-size:10px;padding:0 4px">' + Math.round(w.sc) + "</span>" : ""); }
   function renderBundles() {
-    var bs = D.bundles.filter(function (b) { return !S.chain || b.c === S.chain; });
+    var ctb = coinTok();
+    var bs = ctb ? coinBundles(ctb) : D.bundles.filter(function (b) { return !S.chain || b.c === S.chain; });
     var by = {}; bs.forEach(function (b) { (by[b.c + ":" + b.t] = by[b.c + ":" + b.t] || []).push(b); });
     var h = '<div class="box"><h3>Bundles detectados (' + bs.length + ')</h3><div class="note">Bundle = 2+ wallets que compran en el mismo slot/bloque en los primeros instantes del token (3+ si es más tarde). Suele indicar un mismo operador (Jito bundles, bots de lanzamiento).</div></div>';
     Object.keys(by).forEach(function (k) {
@@ -409,12 +455,13 @@
     var ts = D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; });
     $("tokensBox").innerHTML = '<div class="box"><h3>Tokens escaneados (' + ts.length + ')</h3><div style="overflow:auto"><table class="list"><tr><th>Token</th><th>Chain</th><th>CA</th><th>Lanzado</th><th>MC</th><th>Escaneado</th><th>Compradores tempranos</th><th>Wallets analizadas</th><th>Bundles</th><th></th></tr>' +
       ts.map(function (t) {
-        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-origin="' + esc(t.a) + '">Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
-      }).join("") + "</table></div></div>" + (S.origin ? '<div class="note">Filtrando la tabla de Wallets por el token ' + esc(tokenSym("", S.origin)) + ' · <a href="#" data-origin="">quitar filtro</a></div>' : "");
+        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
+      }).join("") + "</table></div></div>";
   }
   function renderConn() {
-    var cs = D.clusters.filter(function (c) { return !S.chain || c.c === S.chain; });
-    var cross = D.cross.filter(function (c) { return !S.chain || c.c === S.chain; });
+    var ctc = coinTok(), wsetc = {}; if (ctc) chainWallets().forEach(function (w) { wsetc[w.a] = 1; });
+    var cs = D.clusters.filter(function (c) { return ctc ? c.c === ctc.c && c.w.some(function (a) { return wsetc[a]; }) : (!S.chain || c.c === S.chain); });
+    var cross = D.cross.filter(function (c) { return ctc ? c.c === ctc.c && c.t.indexOf(ctc.a) >= 0 : (!S.chain || c.c === S.chain); });
     var h = '<div class="box"><h3>🔁 Cruce de coins: wallets que entraron temprano (top 50) en 2+ tokens escaneados (' + cross.length + ')</h3>' +
       (cross.length ? '<div style="overflow:auto"><table class="list"><tr><th>Wallet</th><th>Chain</th><th>Nº tokens</th><th>Ranking medio</th><th>Tokens</th><th>Etiquetas</th></tr>' + cross.slice(0, 200).map(function (x) {
         var w = D.wIdx[x.c + ":" + x.a];
@@ -454,7 +501,7 @@
     $("jobsBox").innerHTML = '<div class="box"><h3>Trabajos</h3><div style="overflow:auto"><table class="list"><tr><th>Estado</th><th>Tipo</th><th>Chain</th><th>Direcciones</th><th>Progreso / resultado</th><th>Creado</th><th>Duración</th></tr>' +
       (js.map(function (j) {
         var d = j.finished && j.started ? dur(j.finished - j.started) : j.started ? dur(NOW() - j.started) + "…" : "–";
-        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
+        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
       }).join("") || '<tr><td colspan="7" class="muted">Sin trabajos todavía.</td></tr>') + "</table></div></div>";
   }
   function renderFavExtra() {
@@ -482,6 +529,7 @@
   // ---------------------------------------------------------------- render general
   function renderAll() {
     if (!D) return;
+    resolvePendingCoin(); fillCoins(); renderCoinHead();
     renderSources(); renderCards(); renderJobs();
     $("updated").textContent = "Datos: " + ago(D.generated) + (BOX_OK ? " · box en directo" : "");
     var t = S.tab;
@@ -524,7 +572,7 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-origin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
+    var t = e.target.closest("[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
     if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
     if (t.dataset.sel) { e.stopPropagation(); if (t.checked) S.sel[t.dataset.sel] = 1; else delete S.sel[t.dataset.sel]; var all0 = $("selAll"); if (all0) all0.checked = S.visible.length > 0 && S.visible.every(function (k) { return S.sel[k]; }); return renderSelBar(); }
     if (t.id === "selAll") { S.visible.forEach(function (k) { if (t.checked) S.sel[k] = 1; else delete S.sel[k]; }); document.querySelectorAll("#tbl [data-sel]").forEach(function (c) { c.checked = !!S.sel[c.dataset.sel]; }); return renderSelBar(); }
@@ -545,7 +593,7 @@
     if (t.dataset.tag) { var i = S.tags.indexOf(t.dataset.tag); if (i >= 0) S.tags.splice(i, 1); else S.tags.push(t.dataset.tag); return renderAll(); }
     if (t.dataset.open) { e.preventDefault(); return openWallet(t.dataset.open); }
     if (t.hasAttribute("data-close")) return $("drawer").classList.add("hide");
-    if (t.hasAttribute("data-origin")) { e.preventDefault(); S.origin = t.dataset.origin || null; return goto(S.origin ? "wallets" : S.tab); }
+    if (t.hasAttribute("data-coin")) { e.preventDefault(); e.stopPropagation(); $("drawer").classList.add("hide"); var kc = t.dataset.coin; if (kc) { S.tab = "wallets"; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === "wallets"); }); window.scrollTo(0, 0); } return setCoin(kc); }
     if (t.dataset.cluster) { e.preventDefault(); $("drawer").classList.add("hide"); return goto("conn"); }
     if (t.dataset.kind) { S.kind = t.dataset.kind; return renderScan(); }
     if (t.dataset.alias) { e.stopPropagation(); return editAlias(t.dataset.alias); }
@@ -557,12 +605,14 @@
       var body = { alerts: { enabled: $("alEn").checked, min_inflow_usd: +$("alUsd").value || 0, only_from_funder_or_cex: $("alOnly").checked, poll_minutes: +$("alMin").value || 5, min_inflow_native: { solana: +$("alSol").value || 0 } } };
       return api("/api/settings", body).then(function (r) { S.alerts = r.alerts; toast("Alertas guardadas"); }).catch(function (er) { toast(esc(er.message)); });
     }
-    if (t.id === "fClear") { ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund"].forEach(function (id) { $(id).value = ""; }); $("fGroup").value = ""; $("fAct").value = ""; $("fFav").checked = false; $("fHide").checked = false; $("fFresh").checked = false; S.tags = []; S.origin = null; return renderAll(); }
+    if (t.id === "fClear") { ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund"].forEach(function (id) { $(id).value = ""; }); $("fGroup").value = ""; $("fAct").value = ""; $("fFav").checked = false; $("fHide").checked = false; $("fFresh").checked = false; S.tags = []; return renderAll(); }
     if (t.id === "moreBtn") { S.limit += 300; return renderAll(); }
     if (t.dataset.k) return openWallet(t.dataset.k);
   });
   ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund", "fGroup", "fAct", "fFav", "fHide", "fFresh"].forEach(function (id) { $(id).addEventListener("input", function () { S.limit = 300; renderAll(); }); });
-  $("chainSel").addEventListener("change", function () { S.chain = this.value; renderAll(); });
+  $("chainSel").addEventListener("change", function () { S.chain = this.value; var t = coinTok(); if (t && S.chain && t.c !== S.chain) return setCoin(""); renderAll(); });
+  $("coinSel").addEventListener("change", function () { setCoin(this.value); });
+  window.addEventListener("hashchange", function () { readHash(); renderAll(); });
   // tooltips (ratón y pulsación larga en móvil)
   var tip = $("tip"), lp;
   function showTip(el, x, y) { var h = el.getAttribute("data-tip"); if (!h) return; tip.textContent = h; tip.classList.remove("hide"); var r = tip.getBoundingClientRect(); tip.style.left = Math.min(x + 12, innerWidth - r.width - 8) + "px"; tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px"; }
@@ -580,5 +630,14 @@
     setTimeout(function () { checkBox().then(tick); }, (running && BOX_OK ? 10 : CFG.refreshSeconds) * 1000);
   }
   findBox().then(function () { if (PIN && BOX_OK) { syncFavs("list"); syncAliases(); syncGroups(); } tick(); });
-  if (location.hash) { var h = location.hash.slice(1); if (["wallets", "favs", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h; setTimeout(function () { goto(S.tab); }, 300); }
+  function readHash() {
+    var h = decodeURIComponent(location.hash.slice(1));
+    if (!h) return;
+    if (h.indexOf("coin=") === 0) {
+      var ca = h.slice(5).trim(), cur = coinTok();
+      if (!cur || (cur.a !== ca && cur.a.toLowerCase() !== ca.toLowerCase())) { S.coin = ""; S.pendingCoin = ca; resolvePendingCoin(); }
+      if (S.tab !== "wallets" && S.tab !== "favs") S.tab = "wallets";
+    } else if (["wallets", "favs", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
+  }
+  if (location.hash) { readHash(); setTimeout(function () { goto(S.tab); }, 300); }
 })();

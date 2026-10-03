@@ -19,6 +19,12 @@ def build(c=None):
             k = (r["chain"], r["wallet"])
             if r["ts"] and r["ts"] > lastfund.get(k, 0):
                 lastfund[k] = r["ts"]
+    # coins escaneados en los que participó cada wallet (comprador temprano o con trades del token en la base)
+    coins = {}
+    for r in c.execute("SELECT chain, wallet, token FROM token_buyers"):
+        coins.setdefault((r[0], r[1]), set()).add(r[2])
+    for r in c.execute("SELECT DISTINCT s.chain, s.wallet, s.token FROM swaps s JOIN tokens t ON t.chain=s.chain AND t.address=s.token"):
+        coins.setdefault((r[0], r[1]), set()).add(r[2])
     for r in c.execute("SELECT * FROM wallets ORDER BY score DESC NULLS LAST"):
         m = json.loads(r["metrics"]) if r["metrics"] else {}
         wallets.append({
@@ -31,7 +37,7 @@ def build(c=None):
             "fu": r["funder"], "fl": r["funder_label"], "or": json.loads(r["origins"]) if r["origins"] else [],
             "cp": m.get("copy_of"), "lk": m.get("links") or [], "er": m.get("early_rank_min"), "pf": r["prefiltered"],
             "ht": r["history_truncated"], "ls": r["last_scanned"],
-            "fa": r["funded_at"], "lf": lastfund.get((r["chain"], r["address"])),
+            "ct": sorted(coins.get((r["chain"], r["address"]), set()) | set(json.loads(r["origins"]) if r["origins"] else [])), "fa": r["funded_at"], "lf": lastfund.get((r["chain"], r["address"])),
         })
     tokens = []
     for r in c.execute("SELECT * FROM tokens ORDER BY scanned_at DESC"):
