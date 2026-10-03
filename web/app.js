@@ -183,7 +183,7 @@
       return '<tr data-k="' + esc(key(w)) + '">' +
         '<td class="l"><button class="star ' + (isFav(w) ? "on" : "") + '" data-star="' + esc(key(w)) + '">' + (isFav(w) ? "★" : "☆") + "</button></td>" +
         "<td>" + (i + 1) + "</td>" +
-        '<td class="l"><span class="addr">' + (w.al ? "<b>" + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">⧉</button></td>' +
+        '<td class="l"><span class="addr">' + (w.al ? "<b>" + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button></td>' +
         '<td class="l"><span class="chainpill">' + esc(chainName(w.c)) + "</span></td>" +
         '<td><span class="score" style="background:' + scoreColor(w.sc) + '">' + (w.sc == null ? "–" : Math.round(w.sc)) + "</span></td>" +
         "<td>" + signed(w.pn, 2) + "</td><td>" + usd(w.pu) + "</td><td>" + (w.roi == null ? "–" : signed(w.roi * 100, 0, "%")) + "</td>" +
@@ -204,7 +204,7 @@
     var links = (w.lk || []).map(function (l) { return '<a href="#" data-open="' + esc(w.c + ":" + l[0]) + '">' + esc(short(l[0])) + "</a> <span class='mini'>(" + esc(l[1]) + ")</span>"; }).join("<br>");
     var g = gmgn(w.c, w.a);
     $("drawerIn").innerHTML = '<div class="row"><h3 style="margin:0">' + (w.al ? esc(w.al) + " · " : "") + '<span class="addr">' + esc(short(w.a)) + '</span></h3><button class="ghost right" data-close>✕</button></div>' +
-      '<div class="mini addr" style="margin:6px 0;word-break:break-all">' + esc(w.a) + ' <button class="copy" data-copy="' + esc(w.a) + '">⧉</button></div>' +
+      '<div class="mini addr" style="margin:6px 0;word-break:break-all">' + esc(w.a) + ' <button class="copy" data-copy="' + esc(w.a) + '">📋</button></div>' +
       '<div class="row small"><a target="_blank" rel="noopener" href="' + esc(explorer(w.c, w.a)) + '">Explorer</a>' + (g ? ' · <a target="_blank" rel="noopener" href="' + esc(g) + '">GMGN</a>' : "") + (w.c === "solana" ? ' · <a target="_blank" rel="noopener" href="https://app.axiom.trade/@' + esc(w.a) + '">Axiom</a>' : "") +
       ' · <button class="ghost" data-star="' + esc(k) + '">' + (isFav(w) ? "★ Quitar de Mis wallets" : "☆ Añadir a Mis wallets") + '</button> <button class="ghost" data-alias="' + esc(k) + '">Alias</button> <button class="ghost" data-rescan="' + esc(k) + '">Re-escanear</button></div>' +
       '<div style="margin:10px 0">' + tags + "</div>" +
@@ -248,7 +248,7 @@
     var ts = D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; });
     $("tokensBox").innerHTML = '<div class="box"><h3>Tokens escaneados (' + ts.length + ')</h3><div style="overflow:auto"><table class="list"><tr><th>Token</th><th>Chain</th><th>CA</th><th>Lanzado</th><th>MC</th><th>Escaneado</th><th>Compradores tempranos</th><th>Wallets analizadas</th><th>Bundles</th><th></th></tr>' +
       ts.map(function (t) {
-        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">⧉</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-origin="' + esc(t.a) + '">Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
+        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-origin="' + esc(t.a) + '">Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
       }).join("") + "</table></div></div>" + (S.origin ? '<div class="note">Filtrando la tabla de Wallets por el token ' + esc(tokenSym("", S.origin)) + ' · <a href="#" data-origin="">quitar filtro</a></div>' : "");
   }
   function renderConn() {

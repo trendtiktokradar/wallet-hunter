@@ -100,6 +100,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;min-width:1500px
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#0b1424;border:1px solid var(--acc);border-radius:10px;padding:10px 16px;z-index:70;max-width:90vw}
 .mini{font-size:11px;color:var(--mut)}
 @media (max-width:1300px){.cards{grid-template-columns:repeat(4,1fr)}}
+@media (max-width:1560px){.tabs{order:3;flex-basis:100%}}
 @media (max-width:760px){
   .top{padding:8px 10px;gap:8px}
   .brand .sub{display:none}

@@ -161,7 +161,7 @@ def analyze(c, chain, window_days=30, now=None):
     for tok in tokens:
         rows = [dict(r) for r in c.execute("""SELECT t.wallet, t.ts FROM transfers t JOIN token_buyers b ON b.chain=t.chain AND b.wallet=t.wallet AND b.token=?
                  WHERE t.chain=? AND t.direction='in' AND t.asset='native' AND t.amount_native>=? AND t.ts BETWEEN b.first_buy_ts-? AND b.first_buy_ts
-                 AND b.rank<=? ORDER BY t.ts""", (tok, chain, cc.get("sync_min_native", 0.3), cc.get("sync_lookback_s", 7200), cc.get("sync_max_rank", 150)))]
+                 AND b.rank<=? ORDER BY t.ts""", (tok, chain, cc.get("sync_min_native", 0.3), cc.get("sync_lookback_s", 1800), cc.get("sync_max_rank", 150)))]
         best = {}
         for r in rows:
             best.setdefault(r["wallet"], r["ts"])  # primer fondeo dentro de la ventana previa
@@ -169,7 +169,9 @@ def analyze(c, chain, window_days=30, now=None):
         i = 0
         while i < len(items):
             j = i
-            while j + 1 < len(items) and items[j + 1][1] - items[j][1] <= win:
+            # ventana anclada al primer fondeo del grupo (no encadenada), para no fusionar
+            # toda la actividad de una moneda muy negociada en un solo grupo
+            while j + 1 < len(items) and items[j + 1][1] - items[i][1] <= win:
                 j += 1
             grp = [w for w, _ in items[i:j + 1]]
             if len(grp) >= cc.get("sync_min_wallets", 3):
@@ -194,7 +196,7 @@ def analyze(c, chain, window_days=30, now=None):
     comps = sorted([m for m in comps.values() if len(m) >= 2], key=lambda m: (-len(m), min(m)))
     clusters = []
     for i, members in enumerate(comps, 1):
-        cid = f"C{i}"
+        cid = f"{chain[:3].upper()}-C{i}"  # p.ej. SOL-C1, ETH-C2: únicos entre cadenas
         clusters.append({"id": cid, "wallets": members, "size": len(members)})
         for w in members:
             sig[w]["cluster"], sig[w]["cluster_size"] = cid, len(members)
