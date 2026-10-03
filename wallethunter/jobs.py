@@ -65,6 +65,10 @@ def run_job(c, job, on_progress=None):
                     log.exception("token %s", ca)
                     errors.append(f"{ca[:8]}…: {str(e)[:120]}")
         else:
+            # añadir una wallet a mano la saca de la lista de bloqueo
+            for it in items:
+                c.execute("DELETE FROM blocklist WHERE address=?", (it.strip(),))
+            c.commit()
             r = sc.scan_wallets(job["chain"], items, force=True)
             results.append(f"{r['scanned']} wallets analizadas")
         status = "error" if errors and not results else "done"

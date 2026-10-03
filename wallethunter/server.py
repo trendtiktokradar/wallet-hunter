@@ -5,6 +5,7 @@
   POST /api/favs      {pin, op: list|add|remove|alias, chain, address, alias}
   POST /api/aliases   {pin, op: list|set, chain, address, alias}   (alias vacío = borrar)
   POST /api/groups    {pin, op: list|save|delete, group: {id?, name, emoji, chain, wallets[], source}, id}
+  POST /api/delete    {pin, op: wallets|token|plan_token, items:[{chain,address}], chain, token, block}
   POST /api/settings  {pin, alerts?}      -> devuelve ajustes actuales
   POST /api/alerts    {pin}               -> últimas alertas
 """
@@ -17,6 +18,7 @@ from .scan import parse_items
 log = logging.getLogger("wh")
 PORT = int(os.environ.get("WH_PORT", "18795"))
 WAKE = threading.Event()
+DELETE_LOCK = threading.Lock()
 
 
 class H(BaseHTTPRequestHandler):
@@ -113,6 +115,34 @@ class H(BaseHTTPRequestHandler):
                 elif op == "delete":
                     db.delete_group(c, req.get("id"))
                 return self._send(200, {"ok": True, "id": gid, "groups": db.groups(c)})
+            if p == "/api/delete":
+                from . import delete, export
+                op, block = req.get("op"), bool(req.get("block"))
+                with DELETE_LOCK:
+                    if op == "wallets":
+                        items = [(str(i.get("chain") or ""), str(i.get("address") or "")) for i in (req.get("items") or []) if isinstance(i, dict)][:2000]
+                        if not items:
+                            raise ValueError("no hay wallets")
+                        r = delete.delete_wallets(c, items, block=block)
+                    elif op in ("token", "plan_token"):
+                        ch, t = str(req.get("chain") or ""), str(req.get("token") or "").strip()
+                        if not ch or not t:
+                            raise ValueError("faltan chain/token")
+                        if op == "plan_token":
+                            pl = delete.plan_token(c, ch, t)
+                            return self._send(200, {"ok": True, "delete": len(pl["delete"]), "keep_other_coins": len(pl["keep_other_coins"]),
+                                                    "keep_favorites": len(pl["keep_favorites"]), "jobs": len(pl["jobs"]), "running": pl["running"]})
+                        try:
+                            r = delete.delete_token(c, ch, t, block=block)
+                        except RuntimeError as e:
+                            return self._send(409, {"error": "busy", "msg": str(e)})
+                    else:
+                        raise ValueError("op no válida")
+                    export.write(c)
+                r["backup"] = os.path.basename(r["backup"]) if r.get("backup") else None
+                log.info("borrado desde la web: %s", {k: v for k, v in r.items() if k != "backup"})
+                WAKE.set()   # el bucle detecta el cambio y republica data.json
+                return self._send(200, {"ok": True, "result": r})
             if p == "/api/settings":
                 if isinstance(req.get("alerts"), dict):
                     a = req["alerts"]

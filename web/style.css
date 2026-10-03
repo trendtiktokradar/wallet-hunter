@@ -162,3 +162,12 @@ button.exp:hover{background:#2e1065}
 .coinchip{font-size:10.5px;border:1px solid #0e7490;border-radius:6px;padding:0 5px;margin:1px 2px 1px 0;color:#a5f3fc;background:#08303d;cursor:pointer;display:inline-block;white-space:nowrap}
 .coinchip.cur{border-color:#38bdf8;background:#0c4a6e;color:#fff}
 @media (max-width:760px){.coinhead{padding:10px}.coinhead .sym{font-size:18px}.chainbar{flex-wrap:wrap;gap:6px 12px}}
+
+/* borrar */
+button.danger{background:#3b1220;border:1px solid #be123c;color:#fecdd3;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;white-space:nowrap}
+button.danger:hover{background:#5b1630}
+button.danger.big{font-size:14px;padding:8px 14px;font-weight:700}
+button.danger:disabled{opacity:.5;cursor:wait}
+.edit.del{opacity:.55}
+.edit.del:hover{opacity:1}
+.delbox p{margin:6px 0}

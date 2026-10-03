@@ -185,7 +185,7 @@
       '<div class="ca">' + esc(t.a) + ' <button class="copy" data-copy="' + esc(t.a) + '" title="Copiar CA">📋</button></div>' +
       kv("Wallets", nw) + kv("Compradores tempranos", t.nb) + kv("Bundles", coinBundles(t).length) + kv("Lanzado", fmtDate(t.lt)) + kv("Escaneado", fmtDate(t.sa) + " (" + ago(t.sa) + ")") + kv("MC", t.mc ? "$" + num(t.mc, 0) : "–") +
       '<div class="row small"><a class="xl" target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexScreener</a><a class="xl" target="_blank" rel="noopener" href="' + esc(tokenUrl(t)) + '">' + esc(exName(t.c)) + "</a></div>" +
-      '<button class="ghost right" data-coin="">✕ Ver todas las coins</button>';
+      '<div class="right row"><button class="danger" data-delcoin="' + esc(t.c + ":" + t.a) + '">🗑 Borrar coin</button><button class="ghost" data-coin="">✕ Ver todas las coins</button></div>';
   }
   function chainWallets() { var t = coinTok(); return D.wallets.filter(function (w) { return t ? inCoin(w, t) : (!S.chain || w.c === S.chain); }); }
   function renderCards() {
@@ -292,7 +292,7 @@
         '<td class="l"><input type="checkbox" class="selcb" data-sel="' + esc(key(w)) + '"' + (S.sel[key(w)] ? " checked" : "") + "></td>" +
         '<td class="l"><button class="star ' + (isFav(w) ? "on" : "") + '" data-star="' + esc(key(w)) + '">' + (isFav(w) ? "★" : "☆") + "</button></td>" +
         '<td class="nowrap">' + (i + 1) + (isFresh(w) ? '<span class="leaf" data-tip="' + esc(freshTip(w)) + '">🌱</span>' : "") + "</td>" +
-        '<td class="l">' + groupBadges(w) + '<span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button></td>' +
+        '<td class="l">' + groupBadges(w) + '<span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button><button class="edit del" data-del="' + esc(key(w)) + '" title="Borrar wallet (PIN)">🗑</button></td>' +
         '<td class="l nowrap">' + exLinks(w) + "</td>" +
         '<td class="l"><span class="chainpill">' + esc(chainName(w.c)) + "</span></td>" +
         '<td class="l nowrap">' + coinChips(w, 3) + "</td>" +
@@ -313,7 +313,7 @@
   function renderSelBar() {
     var n = Object.keys(S.sel).length, el = $("selBar");
     el.classList.toggle("hide", !n);
-    if (n) el.innerHTML = "<b>" + n + "</b> wallet" + (n > 1 ? "s" : "") + ' seleccionada' + (n > 1 ? "s" : "") + ' <button class="exp" data-export="sel">📤 Exportar grupo</button> <button class="ghost" id="selClear">Quitar selección</button>';
+    if (n) el.innerHTML = "<b>" + n + "</b> wallet" + (n > 1 ? "s" : "") + ' seleccionada' + (n > 1 ? "s" : "") + ' <button class="exp" data-export="sel">📤 Exportar grupo</button> <button class="danger" data-delsel="1">🗑 Borrar seleccionadas</button> <button class="ghost" id="selClear">Quitar selección</button>';
   }
   var EMOJIS = ["🐸", "🧠", "🐋", "🎯", "👻", "🕵️", "🤖", "📦", "🕸️", "💀", "🔥", "⚡", "💎", "🚀", "🐀", "⭐"];
   var GMGN_CH = { solana: "sol", ethereum: "eth", bsc: "bsc", base: "base" };
@@ -401,7 +401,90 @@
       .then(function (r) { setGroups(r.groups); toast("Grupo guardado: " + esc(o.prev.replace(/ 1$/, ""))); renderAll(); })
       .catch(function (e) { toast("No se pudo guardar: " + esc(e.message)); });
   }
-  function closeModal() { $("modal").classList.add("hide"); EXP = null; }
+  function closeModal() { $("modal").classList.add("hide"); EXP = null; DEL = null; }
+
+  // ---------------------------------------------------------------- borrar wallets / coins (PIN, en el box)
+  var DEL = null;
+  function splitKey(k) { var i = k.indexOf(":"); return { c: k.slice(0, i), a: k.slice(i + 1) }; }
+  function privateRefs(keys) {
+    var f = 0, al = 0, gr = {};
+    keys.forEach(function (k) { var p = splitKey(k); if (FAVS[k]) f++; if (ALIASES[k]) al++; (GROUPS || []).forEach(function (g) { if ((g.wallets || []).indexOf(p.a) >= 0) gr[g.id] = 1; }); });
+    return { favs: f, aliases: al, groups: Object.keys(gr).length };
+  }
+  function coinPlan(t) {
+    var del = [], keepOther = [], keepFav = [];
+    D.wallets.forEach(function (w) {
+      if (!inCoin(w, t)) return;
+      var other = walletCoins(w).some(function (a) { return a !== t.a && D.tokens.some(function (x) { return x.c === w.c && x.a === a; }); });
+      if (other) keepOther.push(key(w)); else if (isFav(w)) keepFav.push(key(w)); else del.push(key(w));
+    });
+    return { del: del, keepOther: keepOther, keepFav: keepFav };
+  }
+  function openDelete(kind, arg) {
+    if (kind === "wallets") {
+      var keys = arg.filter(function (k) { return D.wIdx[k]; });
+      if (!keys.length) { toast("No hay wallets que borrar"); return; }
+      DEL = { kind: "wallets", keys: keys, n: keys.length };
+    } else {
+      var t = D.tokens.find(function (x) { return x.c + ":" + x.a === arg; }); if (!t) return;
+      var pl = coinPlan(t);
+      DEL = { kind: "token", t: t, plan: pl, n: pl.del.length };
+    }
+    renderDelete();
+    $("modal").classList.remove("hide");
+    if (DEL.kind === "token" && PIN && BOX_OK) {   // números exactos calculados en el box
+      api("/api/delete", { op: "plan_token", chain: DEL.t.c, token: DEL.t.a }).then(function (r) {
+        if (!DEL || DEL.kind !== "token") return;
+        DEL.server = r; DEL.n = r.delete; renderDelete();
+      }).catch(function () { });
+    }
+  }
+  function plural(n, s) { return n + " " + s + (n === 1 ? "" : "s"); }
+  function renderDelete() {
+    var d = DEL, body, refs;
+    if (d.kind === "wallets") {
+      refs = privateRefs(d.keys);
+      body = "<p>Se borrará" + (d.n > 1 ? "n" : "") + ' <b class="neg">' + plural(d.n, "wallet") + "</b> con sus trades, transferencias, vínculos y su participación en bundles y clusters.</p>" +
+        (d.n <= 6 ? '<div class="mini addr" style="margin:-4px 0 8px">' + d.keys.map(function (k) { var w = D.wIdx[k]; return esc((w.al ? w.al + " · " : "") + short(w.a)); }).join(" · ") + "</div>" : "") +
+        ((refs.favs + refs.aliases + refs.groups) ? "<p>También se quitarán de: " + [refs.favs ? "⭐ Mis wallets (" + refs.favs + ")" : "", refs.aliases ? "alias (" + refs.aliases + ")" : "", refs.groups ? "grupos guardados (" + refs.groups + ")" : ""].filter(Boolean).join(", ") + ".</p>" : "");
+    } else {
+      var t = d.t, sv = d.server, kept = sv ? sv.keep_other_coins + sv.keep_favorites : d.plan.keepOther.length + d.plan.keepFav.length;
+      refs = privateRefs(d.plan.del);
+      body = "<p>Se borrará el coin <b>" + esc(t.sy || short(t.a)) + "</b> (" + esc(chainName(t.c)) + ') con <b class="neg">' + plural(d.n, "wallet") + "</b>, sus trades, bundles, clusters, vínculos y trabajos.</p>" +
+        (kept ? "<p>Se conservan <b>" + plural(kept, "wallet") + "</b> que también están en otros coins escaneados o en ⭐ (solo con sus datos de esos otros coins).</p>" : "") +
+        ((refs.aliases + refs.groups) ? "<p>Las wallets borradas también se quitarán de " + [refs.aliases ? "alias (" + refs.aliases + ")" : "", refs.groups ? "grupos guardados (" + refs.groups + ")" : ""].filter(Boolean).join(" y ") + ".</p>" : "") +
+        '<p class="mini">' + (sv ? "Números comprobados en el box." : "Números calculados con los datos del panel; el box hace el cálculo exacto al borrar.") + "</p>";
+    }
+    $("modalIn").innerHTML = '<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><h3>🗑 ' + (d.kind === "wallets" ? "Borrar wallet" + (d.n > 1 ? "s" : "") : "Borrar coin") + '</h3><button class="ghost right" data-mclose>✕</button></div>' +
+      '<div class="delbox">' + body +
+      '<label class="chk" data-tip="Si lo marcas, estas wallets no se vuelven a añadir cuando re-escanees ' + (d.kind === "token" ? "este coin" : "los coins en los que aparecen") + '. Añadirlas a mano (Escanear → Wallets sueltas) las desbloquea."><input type="checkbox" id="delBlock"> No volver a añadir en futuros escaneos</label>' +
+      '<p class="mini">Antes de borrar se hace una copia de seguridad automática de la base de datos en el box (se guardan las 10 últimas). Esta acción no se puede deshacer desde el panel.</p>' +
+      '<div class="row"><input type="password" id="delPin" inputmode="numeric" autocomplete="current-password" placeholder="PIN" value="' + esc(PIN) + '" style="width:120px">' +
+      '<button class="danger big" id="delGo">🗑 Borrar ' + (d.kind === "wallets" ? plural(d.n, "wallet") : "coin" + (d.n ? " y " + plural(d.n, "wallet") : "")) + '</button><button class="ghost" data-mclose>Cancelar</button><span id="delMsg" class="small"></span></div></div>';
+  }
+  function runDelete() {
+    var d = DEL; if (!d) return;
+    var pin = $("delPin").value.trim(); if (!pin) { $("delMsg").innerHTML = '<span class="neg">Falta el PIN</span>'; return; }
+    PIN = pin; localStorage.setItem("wh_pin", PIN);
+    var block = $("delBlock").checked, btn = $("delGo"); btn.disabled = true; $("delMsg").textContent = "Borrando…";
+    var body = d.kind === "wallets" ? { op: "wallets", block: block, items: d.keys.map(function (k) { var p = splitKey(k); return { chain: p.c, address: p.a }; }) }
+      : { op: "token", block: block, chain: d.t.c, token: d.t.a };
+    api("/api/delete", body).then(function (r) {
+      var res = r.result || {}, gone = d.kind === "wallets" ? d.keys : d.plan.del;
+      // actualización inmediata del panel (el box ya ha reescrito data.json y lo republicará)
+      if (d.kind === "token") {
+        D.tokens = D.tokens.filter(function (x) { return !(x.c === d.t.c && x.a === d.t.a); });
+        if (S.coin === d.t.c + ":" + d.t.a) { S.coin = ""; history.replaceState(null, "", location.pathname + location.search); }
+      }
+      var g = {}; gone.forEach(function (k) { g[k] = 1; delete S.sel[k]; delete FAVS[k]; delete ALIASES[k]; });
+      D.wallets = D.wallets.filter(function (w) { return !g[key(w)]; }); D.wIdx = {}; D.wallets.forEach(function (w) { D.wIdx[key(w)] = w; });
+      save("wh_favs", FAVS); save("wh_aliases", ALIASES);
+      closeModal(); $("drawer").classList.add("hide");
+      toast("Borrado: " + plural(res.deleted_wallets || 0, "wallet") + (d.kind === "token" ? " y el coin " + esc(d.t.sy || "") : "") + (res.kept_wallets ? " · " + res.kept_wallets + " conservadas" : "") + (block ? " · bloqueadas para futuros escaneos" : "") + (res.backup ? " · copia: " + esc(res.backup) : ""), 6000);
+      renderAll(); syncFavs("list"); syncAliases(); syncGroups(); setTimeout(loadData, 1500);
+    }).catch(function (e) { $("delMsg").innerHTML = '<span class="neg">' + esc(e.message) + "</span>"; btn.disabled = false; });
+  }
+
 
   // ---------------------------------------------------------------- detalle
   function openWallet(k) {
@@ -412,7 +495,7 @@
     $("drawerIn").innerHTML = '<div class="row"><h3 style="margin:0">' + (w.al ? esc(w.al) + " · " : "") + '<span class="addr">' + esc(short(w.a)) + '</span></h3><button class="ghost right" data-close>✕</button></div>' +
       '<div class="mini addr" style="margin:6px 0;word-break:break-all">' + esc(w.a) + ' <button class="copy" data-copy="' + esc(w.a) + '">📋</button></div>' +
       '<div class="row small">' + exLinks(w) + (w.c === "solana" ? '<a class="xl" target="_blank" rel="noopener" href="https://app.axiom.trade/@' + esc(w.a) + '">Axiom</a>' : "") +
-      ' <button class="ghost" data-star="' + esc(k) + '">' + (isFav(w) ? "★ Quitar de Mis wallets" : "☆ Añadir a Mis wallets") + '</button> <button class="ghost" data-alias="' + esc(k) + '">✎ ' + (w.al ? "Cambiar alias" : "Poner alias") + '</button> <button class="ghost" data-rescan="' + esc(k) + '">Re-escanear</button></div>' +
+      ' <button class="ghost" data-star="' + esc(k) + '">' + (isFav(w) ? "★ Quitar de Mis wallets" : "☆ Añadir a Mis wallets") + '</button> <button class="ghost" data-alias="' + esc(k) + '">✎ ' + (w.al ? "Cambiar alias" : "Poner alias") + '</button> <button class="ghost" data-rescan="' + esc(k) + '">Re-escanear</button> <button class="danger" data-del="' + esc(k) + '">🗑 Borrar wallet</button></div>' +
       '<div style="margin:10px 0">' + tags + "</div>" +
       '<div class="kv">' +
       "<div>Chain</div><div>" + esc(chainName(w.c)) + "</div>" +
@@ -457,7 +540,7 @@
     var ts = D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; });
     $("tokensBox").innerHTML = '<div class="box"><h3>Tokens escaneados (' + ts.length + ')</h3><div style="overflow:auto"><table class="list"><tr><th>Token</th><th>Chain</th><th>CA</th><th>Lanzado</th><th>MC</th><th>Escaneado</th><th>Compradores tempranos</th><th>Wallets analizadas</th><th>Bundles</th><th></th></tr>' +
       ts.map(function (t) {
-        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
+        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <button class="danger" data-delcoin="' + esc(t.c + ":" + t.a) + '">🗑 Borrar coin</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
       }).join("") + "</table></div></div>";
   }
   function renderConn() {
@@ -574,8 +657,12 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
+    var t = e.target.closest("[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
     if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
+    if (t.dataset.del) { e.stopPropagation(); return openDelete("wallets", [t.dataset.del]); }
+    if (t.dataset.delsel) return openDelete("wallets", Object.keys(S.sel));
+    if (t.dataset.delcoin) { e.preventDefault(); e.stopPropagation(); return openDelete("token", t.dataset.delcoin); }
+    if (t.id === "delGo") return runDelete();
     if (t.dataset.sel) { e.stopPropagation(); if (t.checked) S.sel[t.dataset.sel] = 1; else delete S.sel[t.dataset.sel]; var all0 = $("selAll"); if (all0) all0.checked = S.visible.length > 0 && S.visible.every(function (k) { return S.sel[k]; }); return renderSelBar(); }
     if (t.id === "selAll") { S.visible.forEach(function (k) { if (t.checked) S.sel[k] = 1; else delete S.sel[k]; }); document.querySelectorAll("#tbl [data-sel]").forEach(function (c) { c.checked = !!S.sel[c.dataset.sel]; }); return renderSelBar(); }
     if (t.id === "selClear") { S.sel = {}; return renderAll(); }
@@ -621,7 +708,7 @@
   document.addEventListener("mouseover", function (e) { var el = e.target.closest("[data-tip]"); if (el) showTip(el, e.clientX, e.clientY); else tip.classList.add("hide"); });
   document.addEventListener("touchstart", function (e) { var el = e.target.closest("[data-tip]"); if (!el) { tip.classList.add("hide"); return; } var t0 = e.touches[0]; lp = setTimeout(function () { showTip(el, t0.clientX, t0.clientY); }, 450); }, { passive: true });
   document.addEventListener("touchend", function () { clearTimeout(lp); setTimeout(function () { tip.classList.add("hide"); }, 2500); });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { $("drawer").classList.add("hide"); closeModal(); } });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { $("drawer").classList.add("hide"); closeModal(); } if (e.key === "Enter" && e.target && e.target.id === "delPin") runDelete(); });
   $("modal").addEventListener("input", updateExport);
 
   // ---------------------------------------------------------------- arranque

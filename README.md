@@ -82,6 +82,20 @@ Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbral
   - Axiom (formato corroborado por guías y herramientas de terceros, no por docs oficiales): `[{"trackedWalletAddress","name","emoji","alertsOn"}]`, Wallet Tracker → Import.
   - CSV `address,name` y JSON simple.
 
+## Borrar wallets y coins
+- **🗑** en cada fila y en el detalle de la wallet; **«🗑 Borrar seleccionadas»** en la barra de selección (casillas).
+- **«🗑 Borrar coin»** en cada token de la pestaña Tokens y en la cabecera de la coin: borra el token con sus wallets, trades,
+  transferencias, bundles, clusters, vínculos y trabajos. Las wallets que también están en **otros coins escaneados** (o en ⭐)
+  se conservan, quedándose solo con sus datos de esos otros coins. No se puede borrar una coin mientras se está escaneando (409).
+- Siempre con diálogo de confirmación (cuántas wallets se borran / se conservan) + PIN. Se ejecuta en el box (`POST /api/delete`,
+  `op: wallets | token | plan_token`), reescribe `data.json` y lo republica.
+- Las wallets borradas también salen de ⭐ Mis wallets, alias y grupos guardados (un grupo que se queda vacío se borra).
+- Casilla opcional **«No volver a añadir en futuros escaneos»** (desmarcada por defecto): guarda la wallet en `blocklist`
+  (por coin; `*` si no tenía coin) y los re-escaneos de esa coin la saltan. Añadirla a mano (Escanear → Wallets sueltas) la desbloquea.
+- Antes de cada borrado se copia la base de datos a `data/backups/auto-<fecha>-<motivo>.db` (se guardan las 10 últimas).
+  Para restaurar: `scripts/service.sh stop`, copiar la copia sobre `state/wallethunter.db`, `scripts/service.sh start`.
+- Desde la terminal: `python3 scripts/cleanup_tokens.py [--block] <chain>:<CA>` (misma lógica).
+
 ## Alertas de Telegram (apagadas por defecto)
 Se activan desde la pestaña ⭐ Mis wallets. Vigilan las ⭐ cada N minutos y avisan cuando les entra ≥ X $ (o ≥ X SOL),
 opcionalmente solo si viene de un exchange, de un fondeador conocido o de otra wallet de la base.

@@ -8,6 +8,8 @@ import os
 NO_BOX = os.environ.get("UITEST_NO_BOX") == "1"   # usa el data.json servido junto al panel (datos de prueba)
 FAKE = {}
 GROUPS = []
+DELS = []          # llamadas a /api/delete (simuladas: nunca llegan al box real)
+PLAN = None if os.environ.get("UITEST_PLAN_NONE") == "1" else {}   # respuesta simulada de plan_token; None = el box no la da (el panel usa su estimación)
 
 async def fake_api(route):
     req = route.request
@@ -24,6 +26,17 @@ async def fake_api(route):
         out = {"ok": True, "groups": GROUPS}
     elif req.url.endswith("/api/favs"):
         out = {"ok": True, "favs": []}
+    elif req.url.endswith("/api/delete"):
+        DELS.append(body)
+        if body.get("op") == "plan_token":
+            if PLAN is None:
+                return await route.fulfill(status=503, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"}, body='{"error":"x"}')
+            out = dict(PLAN, ok=True)
+        elif body.get("op") == "wallets":
+            out = {"ok": True, "result": {"requested": len(body["items"]), "deleted_wallets": len(body["items"]), "backup": "auto-test-wallets.db"}}
+        else:
+            pl = PLAN or {}
+            out = {"ok": True, "result": {"token": body.get("token"), "deleted_wallets": pl.get("delete", 0), "kept_wallets": pl.get("keep_other_coins", 0) + pl.get("keep_favorites", 0), "backup": "auto-test-coin.db"}}
     else:
         out = {"ok": True}
     await route.fulfill(status=200, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"}, body=json.dumps(out))
@@ -77,6 +90,101 @@ async def coin_tests(pg, D, tag, mobile):
             await p2.screenshot(path=f"{SHOTS}/{nm}-coin-table.png")
     await p2.close()
     await pg.goto(pg.url.split("#")[0], wait_until="networkidle")
+
+def coin_plan(D, t):
+    toks = {(x["c"], x["a"]) for x in D["tokens"]}
+    dl = keep = 0
+    for w in D["wallets"]:
+        cs = w.get("ct") or w.get("or") or []
+        if w["c"] != t["c"] or t["a"] not in cs: continue
+        if any(a != t["a"] and (w["c"], a) in toks for a in cs): keep += 1
+        else: dl += 1
+    return dl, keep
+
+async def delete_tests(pg, D, tag, mobile):
+    global PLAN
+    def ok(cond, msg):
+        print(("OK   " if cond else "FAIL ") + msg)
+        if not cond: FAILS.append(msg)
+    async def txt(sel): return " ".join((await pg.locator(sel).inner_text()).split())
+    await pg.evaluate("window.scrollTo(0,0)")
+    await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(300)
+    await pg.locator("#tbl").scroll_into_view_if_needed()
+    rows = pg.locator("#tbl tbody tr[data-k]")
+    k = await rows.nth(0).get_attribute("data-k")
+    # 🗑 en la fila: abre el diálogo, no el detalle
+    await pg.locator(f'#tbl tbody tr[data-k="{k}"] [data-del]').click(); await pg.wait_for_timeout(300)
+    ok(await pg.locator("#modal").is_visible() and not await pg.locator("#drawer").is_visible(), tag + "🗑 en la fila abre el diálogo (no el detalle)")
+    m = await txt("#modalIn")
+    ok("Se borrará 1 wallet" in m and "Borrar 1 wallet" in m, tag + "diálogo en español con el nº de wallets: " + m[:80])
+    ok(not await pg.locator("#delBlock").is_checked() and "No volver a añadir en futuros escaneos" in m, tag + "casilla «No volver a añadir…» desmarcada por defecto")
+    ok(await pg.locator("#delPin").is_visible() and "copia de seguridad" in m, tag + "pide PIN y avisa de la copia de seguridad")
+    await pg.locator("#modalIn button[data-mclose]", has_text="Cancelar").click(); await pg.wait_for_timeout(200)
+    ok(not await pg.locator("#modal").is_visible(), tag + "«Cancelar» cierra sin borrar")
+    await pg.locator(f'#tbl tbody tr[data-k="{k}"] [data-del]').click(); await pg.wait_for_timeout(200)
+    await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
+    ok(not await pg.locator("#modal").is_visible() and not DELS, tag + "Escape cierra sin llamar al box")
+    # confirmar (con bloqueo)
+    await pg.locator(f'#tbl tbody tr[data-k="{k}"] [data-del]').click(); await pg.wait_for_timeout(200)
+    await pg.locator("#delBlock").check()
+    await pg.locator("#delGo").click(); await pg.wait_for_timeout(500)
+    last = DELS[-1] if DELS else {}
+    c0, a0 = k.split(":", 1)
+    ok(last.get("op") == "wallets" and last.get("block") is True and last.get("items") == [{"chain": c0, "address": a0}] and last.get("pin") == "test-pin", tag + "envía op=wallets + PIN + block=true")
+    ok(await pg.locator(f'#tbl tbody tr[data-k="{k}"]').count() == 0 and not await pg.locator("#modal").is_visible(), tag + "la wallet desaparece de la tabla")
+    t0 = await txt("#toast")
+    ok("Borrado: 1 wallet" in t0 and "bloqueadas" in t0, tag + "aviso: " + t0[:90])
+    await pg.wait_for_timeout(1800)   # deja que termine la recarga programada
+    # selección múltiple → Borrar seleccionadas
+    await pg.locator("#tbl").scroll_into_view_if_needed()
+    ks = [await rows.nth(i).get_attribute("data-k") for i in (0, 1)]
+    await rows.nth(0).locator("[data-sel]").check(); await rows.nth(1).locator("[data-sel]").check()
+    await pg.locator("#selBar [data-delsel]").click(); await pg.wait_for_timeout(300)
+    m = await txt("#modalIn")
+    ok("Se borrarán 2 wallets" in m and "Borrar 2 wallets" in m, tag + "«Borrar seleccionadas» → 2 wallets")
+    if SHOTS and mobile:
+        await pg.evaluate("document.getElementById('tip').classList.add('hide')"); await pg.screenshot(path=f"{SHOTS}/mobile-delete.png")
+    await pg.locator("#delGo").click(); await pg.wait_for_timeout(500)
+    last = DELS[-1]
+    ok(last.get("op") == "wallets" and last.get("block") is False and sorted(i["chain"] + ":" + i["address"] for i in last["items"]) == sorted(ks), tag + "envía las 2 seleccionadas (block=false)")
+    ok(all([await pg.locator(f'#tbl tbody tr[data-k="{x}"]').count() == 0 for x in ks]) and not await pg.locator("#selBar").is_visible(), tag + "desaparecen y se vacía la selección")
+    await pg.wait_for_timeout(1800)
+    # botón en el detalle
+    await pg.locator("#tbl").scroll_into_view_if_needed()
+    await rows.nth(0).locator("td").nth(5).click(); await pg.wait_for_timeout(400)
+    ok(await pg.locator("#drawer [data-del]").is_visible(), tag + "«🗑 Borrar wallet» en el detalle")
+    await pg.locator("#drawer [data-del]").click(); await pg.wait_for_timeout(300)
+    ok(await pg.locator("#modal").is_visible() and "1 wallet" in await txt("#modalIn"), tag + "desde el detalle abre el diálogo")
+    await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
+    # Borrar coin desde Tokens
+    await pg.locator('#tabs button[data-tab="tokens"]').click(); await pg.wait_for_timeout(300)
+    cks = [await x.get_attribute("data-delcoin") for x in await pg.locator("#tokensBox [data-delcoin]").all()]
+    tl = [next(x for x in D["tokens"] if x["c"] + ":" + x["a"] == ck) for ck in cks]
+    t = next((x for x in tl if coin_plan(D, x)[1] and coin_plan(D, x)[0]), tl[0])   # mejor una coin con wallets compartidas
+    ck = t["c"] + ":" + t["a"]
+    dl, keep = coin_plan(D, t)
+    if PLAN is not None:
+        PLAN = {"delete": dl, "keep_other_coins": keep, "keep_favorites": 0, "jobs": 1, "running": False}
+    await pg.locator(f'#tokensBox [data-delcoin="{ck}"]').click(); await pg.wait_for_timeout(600)
+    m = await txt("#modalIn")
+    ok(("Borrar coin" in m) and (f"con {dl} wallet" in m) and (t["sy"] or "") in m, tag + f"Tokens → «Borrar coin» ({dl} wallets): " + m[:100])
+    ok((f"Se conservan {keep} wallet" in m) if keep else ("Se conservan" not in m), tag + f"wallets conservadas por estar en otras coins ({keep})")
+    ok(("comprobados en el box" in m) if PLAN is not None else ("calculados con los datos del panel" in m), tag + "origen de los números indicado")
+    await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
+    # desde la cabecera de la coin + confirmar
+    await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(200)
+    nopt = await pg.locator("#coinSel option").count()
+    await pg.select_option("#coinSel", ck); await pg.wait_for_timeout(400)
+    await pg.locator("#coinHead [data-delcoin]").click(); await pg.wait_for_timeout(600)
+    ok(await pg.locator("#modal").is_visible() and f"con {dl} wallet" in await txt("#modalIn"), tag + "cabecera de la coin → «Borrar coin»")
+    if SHOTS:
+        await pg.evaluate("document.getElementById('tip').classList.add('hide')")
+        await pg.screenshot(path=f"{SHOTS}/{'mobile' if mobile else 'desktop'}-delete-coin.png")
+    await pg.locator("#delGo").click(); await pg.wait_for_timeout(500)
+    last = DELS[-1]
+    ok(last.get("op") == "token" and last.get("chain") == t["c"] and last.get("token") == t["a"] and last.get("block") is False, tag + "envía op=token con chain/token")
+    ok(await pg.locator("#coinSel option").count() == nopt - 1 and not await pg.locator("#coinHead").is_visible() and "#coin=" not in pg.url, tag + "la coin desaparece del selector y se vuelve a «todas»")
+    await pg.goto(pg.url.split("#")[0], wait_until="networkidle"); await pg.wait_for_timeout(1500)
 
 FAILS = []
 SHOTS = None
@@ -162,7 +270,7 @@ async def main():
                 # alias (PIN, simulado)
                 first = await pg.locator("#tbl tbody tr[data-k]").first.get_attribute("data-k")
                 pg.once("dialog", lambda d: asyncio.ensure_future(d.accept("Ballena prueba")))
-                await pg.locator(f'#tbl tbody tr[data-k="{first}"] button.edit').click(); await pg.wait_for_timeout(800)
+                await pg.locator(f'#tbl tbody tr[data-k="{first}"] button[data-alias]').click(); await pg.wait_for_timeout(800)
                 ok(FAKE.get(first) == "Ballena prueba", tag + "alias enviado al box con PIN")
                 ok("Ballena prueba" in await pg.locator(f'#tbl tbody tr[data-k="{first}"]').inner_text(), tag + "alias visible en la tabla")
                 ok(not await pg.locator("#drawer").is_visible(), tag + "editar alias no abre el detalle")
@@ -232,6 +340,16 @@ async def main():
                 await pg.keyboard.press("Escape")
             if D and len(D["tokens"]) >= 1:
                 await coin_tests(pg, D, tag, mobile)
+            if D and not mobile and shots:
+                await pg.locator("#tbl tbody tr[data-k]").nth(0).locator("[data-sel]").check()
+                await pg.locator("#tbl tbody tr[data-k]").nth(1).locator("[data-sel]").check()
+                await pg.locator("#tbl tbody tr[data-k]").nth(2).locator("[data-sel]").check()
+                await pg.locator("#selBar [data-delsel]").click(); await pg.wait_for_timeout(300)
+                await pg.evaluate("document.getElementById('tip').classList.add('hide')"); await pg.screenshot(path=shots + "/desktop-delete.png")
+                await pg.keyboard.press("Escape"); await pg.locator("#selClear").click()
+            if D:
+                DELS.clear()
+                await delete_tests(pg, D, tag, mobile)
             await ctx.close()
         await b.close()
     net = [e for e in errs if "Failed to load resource" in e]

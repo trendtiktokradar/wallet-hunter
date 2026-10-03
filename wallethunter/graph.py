@@ -41,7 +41,7 @@ def analyze(c, chain, window_days=30, now=None):
         buyers = [dict(r) for r in c.execute("SELECT * FROM token_buyers WHERE chain=? AND token=? AND kind='early' ORDER BY first_buy_slot, rank", (chain, tok))]
         if not buyers:
             continue
-        launch_slot = t.get("launch_slot") or min(b["first_buy_slot"] for b in buyers if b["first_buy_slot"] is not None)
+        launch_slot = t.get("launch_slot") or min((b["first_buy_slot"] for b in buyers if b["first_buy_slot"] is not None), default=None)
         launch_ts = t.get("launch_ts")
         by_slot = defaultdict(list)
         for b in buyers:

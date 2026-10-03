@@ -105,15 +105,23 @@ class Scanner:
                           pools=excluded.pools,price_usd=excluded.price_usd,price_native=excluded.price_native,mc=excluded.mc,liq=excluded.liq,scanned_at=excluded.scanned_at,status=excluded.status,info=excluded.info""",
                        (chain, token, symbol, name, launch_ts, launch_slot, creator, json.dumps((mk.get("pools") or [])[:10]), mk.get("price_usd"),
                         (mk.get("price_usd") or 0) / nusd if mk.get("price_usd") else None, mk.get("mc"), mk.get("liq"), now, "scanning", json.dumps(info)))
+        from .delete import blocked_set
+        blocked = blocked_set(self.c, chain, token)   # borradas con «No volver a añadir»
+        if blocked:
+            self.progress(f"{sum(1 for b in buyers if b['wallet'] in blocked)} wallets en la lista de bloqueo: no se añaden")
         for rank, b in enumerate(buyers, 1):
+            if b["wallet"] in blocked:
+                continue
             self.c.execute("INSERT OR REPLACE INTO token_buyers(chain,token,wallet,first_buy_ts,first_buy_slot,rank,native_spent,kind) VALUES(?,?,?,?,?,?,?,'early')",
                            (chain, token, b["wallet"], b["ts"], b["slot"], rank, b["spent"]))
         self.c.commit()
         cap = C["max_wallets_per_token"]
-        targets = [b["wallet"] for b in buyers][:cap]
-        if creator and creator not in targets:
+        targets = [b["wallet"] for b in buyers if b["wallet"] not in blocked][:cap]
+        if creator and creator not in targets and creator not in blocked:
             targets.append(creator)
         for w in recent:
+            if w in blocked:
+                continue
             if len(targets) >= cap + 1:
                 break
             if w not in targets:

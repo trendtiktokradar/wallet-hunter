@@ -184,6 +184,72 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(self.c.execute("SELECT status FROM jobs WHERE id=?", (jid,)).fetchone()[0], "done")
 
 
+class TestDelete(unittest.TestCase):
+    """Borrado de wallets y de coins, copias de seguridad y lista de bloqueo (BD aparte)."""
+    def setUp(self):
+        from wallethunter import delete
+        self.delete = delete
+        d = tempfile.mkdtemp()
+        delete.BACKUP_DIR = os.path.join(d, "backups")
+        self.c = db.connect(os.path.join(d, "del.db"))
+        self.fake = FakeHelius()
+        scan.provider = lambda chain: self.fake
+        market.native_usd = lambda chain: 150.0
+        market.token_market = lambda chain, t: {"symbol": "TEST", "name": "Test", "price_usd": 0.0001, "launch_ts": self.fake.L, "pools": [], "liq": 20000}
+        market.dexscreener_tokens = lambda chain, ts: {t: {"price_usd": 0.0001, "launch_ts": self.fake.L, "liq": 20000, "symbol": "TEST"} for t in ts}
+        scan.Scanner(self.c, progress=lambda m: None).scan_token("solana", MINT)
+        # segundo coin escaneado en el que también entró B
+        self.M2 = "Mint2222222222222222222222222222222222pump"
+        self.c.execute("INSERT INTO tokens(chain,address,symbol,scanned_at,status) VALUES('solana',?,'OTRO',?,'ok')", (self.M2, int(time.time())))
+        self.c.execute("INSERT INTO token_buyers(chain,token,wallet,rank,kind) VALUES('solana',?,?,1,'early')", (self.M2, B))
+        self.c.execute("INSERT INTO swaps(chain,wallet,token,ts,slot,side,token_amount,native_amount,tx) VALUES('solana',?,?,?,5,'buy',10,0.5,'tx-m2')", (B, self.M2, int(time.time()) - 100))
+        self.c.execute("INSERT INTO favorites(chain,address,alias,added) VALUES('solana',?,NULL,1)", (DEV,))
+        db.set_alias(self.c, "solana", A, "ballena")
+        db.save_group(self.c, {"name": "g", "emoji": "🐸", "chain": "solana", "wallets": [A, B]})
+        jobs.enqueue(self.c, "tokens", "solana", [MINT], origin="test")
+        self.c.execute("UPDATE jobs SET status='done'")
+        self.c.commit()
+
+    def wallets(self):
+        return {r[0] for r in self.c.execute("SELECT address FROM wallets")}
+
+    def test_plan_and_delete_token(self):
+        p = self.delete.plan_token(self.c, "solana", MINT)
+        self.assertEqual(set(p["delete"]), {A, C2}); self.assertEqual(p["keep_other_coins"], [B]); self.assertEqual(p["keep_favorites"], [DEV])
+        r = self.delete.delete_token(self.c, "solana", MINT, block=True)
+        self.assertEqual(r["deleted_wallets"], 2); self.assertEqual(r["kept_wallets"], 2); self.assertEqual(r["jobs_deleted"], 1)
+        self.assertTrue(os.path.exists(r["backup"]))
+        self.assertEqual(self.wallets(), {B, DEV})
+        self.assertIsNone(self.c.execute("SELECT 1 FROM tokens WHERE address=?", (MINT,)).fetchone())
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM token_buyers WHERE token=?", (MINT,)).fetchone()[0], 0)
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM swaps WHERE token=?", (MINT,)).fetchone()[0], 0)   # B solo conserva datos de OTRO
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM swaps WHERE wallet=? AND token=?", (B, self.M2)).fetchone()[0], 1)
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], 0)
+        self.assertEqual(db.aliases(self.c), [])                       # alias de A borrado
+        self.assertEqual(db.groups(self.c)[0]["wallets"], [B])          # A fuera del grupo
+        self.assertEqual(json.loads(self.c.execute("SELECT origins FROM wallets WHERE address=?", (B,)).fetchone()[0]), [])
+        self.assertEqual(self.delete.blocked_set(self.c, "solana", MINT), {A, C2})
+        d = export.build(self.c)
+        self.assertEqual([t["a"] for t in d["tokens"]], [self.M2])
+        # re-escaneo del mismo coin: A y C2 bloqueadas no vuelven
+        scan.Scanner(self.c, progress=lambda m: None).scan_token("solana", MINT)
+        self.assertEqual(self.wallets(), {B, DEV})
+        self.assertEqual({r[0] for r in self.c.execute("SELECT wallet FROM token_buyers WHERE token=?", (MINT,))}, {B, DEV})
+
+    def test_delete_wallets_and_backups(self):
+        r = self.delete.delete_wallets(self.c, [("solana", A), ("solana", B), ("solana", "NoExiste")])
+        self.assertEqual(r["deleted_wallets"], 2); self.assertEqual(r["requested"], 3)
+        self.assertEqual(self.wallets(), {C2, DEV})
+        self.assertEqual(db.groups(self.c), [])                         # grupo vacío -> borrado
+        self.assertEqual(self.delete.blocked_set(self.c, "solana", MINT), set())   # sin bloqueo por defecto
+        self.assertEqual(self.c.execute("SELECT n_wallets FROM tokens WHERE address=?", (MINT,)).fetchone()[0], 2)
+        self.delete.delete_wallets(self.c, [("solana", DEV)])
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM favorites").fetchone()[0], 0)   # también sale de ⭐
+        for _ in range(12):
+            self.delete.backup(self.c, "x")
+        self.assertEqual(len(os.listdir(self.delete.BACKUP_DIR)), self.delete.KEEP_BACKUPS)
+
+
 class TestEvm(unittest.TestCase):
     def test_build_deltas_buy_sell(self):
         os.environ["ETHERSCAN_API_KEY"] = "x" * 34
@@ -247,6 +313,11 @@ class TestServer(unittest.TestCase):
         self.assertEqual(post("/api/groups", {"pin": "482913", "op": "save", "group": {"name": "", "wallets": [A]}})[0], 400)
         code, r = post("/api/groups", {"pin": "482913", "op": "delete", "id": gid})
         self.assertEqual(r["groups"], [])
+        self.assertEqual(post("/api/delete", {"pin": "0000", "op": "wallets", "items": [{"chain": "solana", "address": A}]})[0], 401)
+        code, r = post("/api/delete", {"pin": "482913", "op": "plan_token", "chain": "solana", "token": "NoExiste111111111111111111111111111111"})
+        self.assertEqual(code, 200); self.assertEqual(r["delete"], 0)
+        code, r = post("/api/delete", {"pin": "482913", "op": "nada"})
+        self.assertEqual(code, 400)
         code, r = post("/api/settings", {"pin": "482913", "alerts": {"min_inflow_usd": 5000, "enabled": False}})
         self.assertEqual(r["alerts"]["min_inflow_usd"], 5000)
         srv.shutdown()

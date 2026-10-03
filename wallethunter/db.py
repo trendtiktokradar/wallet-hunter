@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 -- alias privados (como los favoritos: solo los sirve el box con PIN, no van al data.json público)
 -- grupos exportados/guardados desde la web (privados, con PIN): nombre + emoji + wallets
 CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT, emoji TEXT, chain TEXT, wallets TEXT, source TEXT, created INTEGER, updated INTEGER);
+-- lista de bloqueo opcional: wallets borradas que no se vuelven a añadir al re-escanear ese coin (token '*' = cualquiera)
+CREATE TABLE IF NOT EXISTS blocklist(chain TEXT, address TEXT, token TEXT, added INTEGER, PRIMARY KEY(chain, address, token));
 CREATE TABLE IF NOT EXISTS aliases(chain TEXT, address TEXT, alias TEXT, updated INTEGER, PRIMARY KEY(chain, address));
 """
 
