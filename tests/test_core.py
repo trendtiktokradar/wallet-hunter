@@ -165,6 +165,10 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(d["stats"]["bundles"], 1)
         self.assertGreaterEqual(d["stats"]["clusters"], 1)
         self.assertTrue(os.path.exists(os.environ["WH_DATA"]))
+        wa = next(w for w in d["wallets"] if w["a"] == A)
+        self.assertNotIn("al", wa)                      # alias privados: nunca en el json público
+        self.assertIn("lf", wa); self.assertIn("tr", wa); self.assertIn("fa", wa)
+        self.assertEqual(d["chains"]["solana"]["exn"], "Solscan"); self.assertEqual(d["chains"]["ethereum"]["gmgn"], "eth")
 
     def test_jobs(self):
         jid = jobs.enqueue(self.c, "tokens", "solana", [MINT], origin="test")
@@ -224,6 +228,13 @@ class TestServer(unittest.TestCase):
         self.assertEqual(code, 200); self.assertEqual(r["items"], [MINT])
         code, r = post("/api/favs", {"pin": "482913", "op": "add", "chain": "solana", "address": A, "alias": "ballena 1"})
         self.assertEqual(r["favs"][0]["alias"], "ballena 1")
+        code, r = post("/api/aliases", {"pin": "0000", "op": "set", "chain": "solana", "address": B, "alias": "x"})
+        self.assertEqual(code, 401)
+        code, r = post("/api/aliases", {"pin": "482913", "op": "set", "chain": "solana", "address": B, "alias": "  insider dev  "})
+        self.assertEqual(code, 200); self.assertIn({"chain": "solana", "address": B, "alias": "insider dev"}, [{k: a[k] for k in ("chain", "address", "alias")} for a in r["aliases"]])
+        self.assertIn(A, [a["address"] for a in r["aliases"]])   # el alias del favorito también queda guardado
+        code, r = post("/api/aliases", {"pin": "482913", "op": "set", "chain": "solana", "address": B, "alias": ""})
+        self.assertNotIn(B, [a["address"] for a in r["aliases"]])
         code, r = post("/api/settings", {"pin": "482913", "alerts": {"min_inflow_usd": 5000, "enabled": False}})
         self.assertEqual(r["alerts"]["min_inflow_usd"], 5000)
         srv.shutdown()

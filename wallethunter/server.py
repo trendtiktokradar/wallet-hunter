@@ -3,6 +3,7 @@
   POST /api/check     {pin}
   POST /api/scan      {pin, kind: tokens|wallets, chain, items}
   POST /api/favs      {pin, op: list|add|remove|alias, chain, address, alias}
+  POST /api/aliases   {pin, op: list|set, chain, address, alias}   (alias vacío = borrar)
   POST /api/settings  {pin, alerts?}      -> devuelve ajustes actuales
   POST /api/alerts    {pin}               -> últimas alertas
 """
@@ -89,12 +90,20 @@ class H(BaseHTTPRequestHandler):
                 if op in ("add", "alias") and ch and a:
                     c.execute("INSERT INTO favorites(chain,address,alias,added) VALUES(?,?,?,?) ON CONFLICT(chain,address) DO UPDATE SET alias=COALESCE(excluded.alias, alias)",
                               (ch, a, (req.get("alias") or None) and str(req.get("alias"))[:40], int(time.time())))
-                    c.execute("UPDATE wallets SET alias=COALESCE(?, alias) WHERE chain=? AND address=?", ((req.get("alias") or None) and str(req.get("alias"))[:40], ch, a))
+                    if req.get("alias"):
+                        db.set_alias(c, ch, a, req.get("alias"))
                 elif op == "remove" and ch and a:
                     c.execute("DELETE FROM favorites WHERE chain=? AND address=?", (ch, a))
                 c.commit()
                 favs = [dict(r) for r in c.execute("SELECT chain, address, alias, added FROM favorites ORDER BY added DESC")]
                 return self._send(200, {"ok": True, "favs": favs})
+            if p == "/api/aliases":
+                if req.get("op") == "set":
+                    ch, a = req.get("chain"), (req.get("address") or "").strip()
+                    if not ch or not a or len(a) > 64:
+                        raise ValueError("faltan chain/address")
+                    db.set_alias(c, ch, a, req.get("alias"))
+                return self._send(200, {"ok": True, "aliases": db.aliases(c)})
             if p == "/api/settings":
                 if isinstance(req.get("alerts"), dict):
                     a = req["alerts"]

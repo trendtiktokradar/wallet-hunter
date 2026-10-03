@@ -7,16 +7,73 @@
   "max_history_pages_per_wallet": 10,
   "max_sig_pages_token": 300,
   "max_sig_pages_age": 3,
-  "bot_prefilter": {"sigs": 1000, "hours": 24},
-  "bundle": {"early_slots": 150, "min_wallets": 2, "min_wallets_late": 3, "first_slots_strict": 5},
-  "cluster": {"hub_min_funded": 4, "generic_funder_max": 60, "cex_time_window_min": 15, "cex_amount_tolerance": 0.1, "min_transfer_native": 0.05, "max_funder_lookups": 250},
-  "copy_trader": {"max_slot_gap": 3, "max_block_gap": 2, "min_tokens": 3},
-  "helius": {"rps": 8, "enhanced_rps": 1.8, "monthly_credits": 1000000, "prefer_gtfa": "auto"},
-  "etherscan": {"rps": 2.5, "daily_calls": 100000},
-  "dexscreener": {"rpm": 250},
-  "geckoterminal": {"rpm": 25},
+  "bot_prefilter": {
+    "sigs": 1000,
+    "hours": 24
+  },
+  "bundle": {
+    "early_slots": 150,
+    "min_wallets": 2,
+    "min_wallets_late": 3,
+    "first_slots_strict": 5
+  },
+  "cluster": {
+    "hub_min_funded": 4,
+    "generic_funder_max": 60,
+    "cex_time_window_min": 15,
+    "cex_amount_tolerance": 0.1,
+    "min_transfer_native": 0.05,
+    "max_funder_lookups": 250
+  },
+  "copy_trader": {
+    "max_slot_gap": 3,
+    "max_block_gap": 2,
+    "min_tokens": 3
+  },
+  "helius": {
+    "rps": 8,
+    "enhanced_rps": 1.8,
+    "monthly_credits": 1000000,
+    "prefer_gtfa": "auto"
+  },
+  "etherscan": {
+    "rps": 2.5,
+    "daily_calls": 100000
+  },
+  "dexscreener": {
+    "rpm": 250
+  },
+  "geckoterminal": {
+    "rpm": 25
+  },
   "poll_seconds": 120,
   "publish": true,
-  "github": {"owner": "trendtiktokradar", "repo": "wallet-hunter", "data_branch": "data", "queue_branch": "queue"},
-  "alerts": {"enabled": false, "min_inflow_usd": 3000, "min_inflow_native": {"solana": 20, "ethereum": 1, "bsc": 4, "base": 1, "arbitrum": 1, "robinhood": 1, "polygon": 5000}, "only_from_funder_or_cex": false, "poll_minutes": 5, "watch": "favorites"}
+  "github": {
+    "owner": "trendtiktokradar",
+    "repo": "wallet-hunter",
+    "data_branch": "data",
+    "queue_branch": "queue"
+  },
+  "alerts": {
+    "enabled": false,
+    "min_inflow_usd": 3000,
+    "min_inflow_native": {
+      "solana": 20,
+      "ethereum": 1,
+      "bsc": 4,
+      "base": 1,
+      "arbitrum": 1,
+      "robinhood": 1,
+      "polygon": 5000
+    },
+    "only_from_funder_or_cex": false,
+    "poll_minutes": 5,
+    "watch": "favorites"
+  },
+  "recent_funding_min_native": {
+    "solana": 0.1,
+    "bsc": 0.02,
+    "polygon": 5,
+    "default": 0.005
+  }
 }

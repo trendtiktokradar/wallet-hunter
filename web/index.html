@@ -41,15 +41,19 @@
       <label>PnL ≥ <input id="fPnl" type="number" step="any" placeholder="nativo"></label>
       <label>Win rate ≥ <input id="fWr" type="number" min="0" max="100" placeholder="%"></label>
       <label>Tokens ≥ <input id="fTok" type="number" min="0" placeholder="0"></label>
+      <label data-tip="Nº total de compras + ventas (swaps) en los últimos 30 días">Trades ≥ <input id="fTrades" type="number" min="0" placeholder="0"></label>
+      <label data-tip="Recibió una entrada de moneda nativa (≥0,1 SOL / ≥0,005 ETH) hace menos de estas horas">Fondeada hace &lt; <input id="fFund" type="number" min="0" step="any" placeholder="h"> h</label>
       <select id="fGroup"><option value="">Bundles/cluster: todas</option><option value="bundle">Solo en bundle</option><option value="cluster">Solo en cluster</option><option value="any">Bundle o cluster</option><option value="none">Sin bundle ni cluster</option></select>
       <select id="fAct"><option value="">Actividad: todas</option><option value="1">Últimas 24 h</option><option value="3">Últimos 3 días</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option></select>
       <label class="chk"><input id="fFav" type="checkbox"> Solo ⭐</label>
+      <label class="chk" data-tip="Wallet fresca: su primera transacción (o su primer fondeo) fue hace menos de 7 días"><input id="fFresh" type="checkbox"> Solo frescas 🌱</label>
       <label class="chk"><input id="fHide" type="checkbox"> Ocultar bots/bundles/insiders</label>
       <button id="fClear" class="ghost">Limpiar</button>
       <span class="muted" id="fCount"></span>
       <button class="primary right" data-goto="scan">+ Escanear token / añadir wallets</button>
     </div>
-    <div class="taghelp muted small">Etiquetas (clic para filtrar: se exigen <b>todas</b> las seleccionadas · pasa el ratón o mantén pulsado para ver la explicación)</div>
+    <div class="taghelp muted small">Etiquetas: haz clic para filtrar. Si marcas varias, solo se muestran las wallets que tienen <b>todas</b> a la vez (Y). El número de cada etiqueta es cuántas wallets de la lista actual la tienen; <span class="greyhint">en gris</span> las que darían 0 resultados con los filtros actuales. Pasa el ratón o mantén pulsado para ver qué significa cada una.</div>
+    <div id="tagSel" class="tagsel hide"></div>
     <div class="chips" id="chips"></div>
     <div id="favExtra" class="hide"></div>
     <div class="tablewrap"><table class="grid" id="tbl"><thead></thead><tbody></tbody></table></div>

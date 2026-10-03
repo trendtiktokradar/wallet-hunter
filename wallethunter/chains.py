@@ -1,18 +1,18 @@
 """Registro de chains soportadas."""
 
 CHAINS = {
-    "solana": {"name": "Solana", "kind": "solana", "native": "SOL", "kraken": "SOLUSD", "dexscreener": "solana", "gecko": "solana", "explorer": "https://solscan.io/account/", "tx": "https://solscan.io/tx/"},
-    "ethereum": {"name": "Ethereum", "kind": "evm", "chain_id": 1, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "ethereum", "gecko": "eth", "explorer": "https://etherscan.io/address/", "tx": "https://etherscan.io/tx/",
+    "solana": {"name": "Solana", "kind": "solana", "native": "SOL", "kraken": "SOLUSD", "dexscreener": "solana", "gecko": "solana", "explorer_name": "Solscan", "gmgn": "sol", "explorer": "https://solscan.io/account/", "tx": "https://solscan.io/tx/"},
+    "ethereum": {"name": "Ethereum", "kind": "evm", "chain_id": 1, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "ethereum", "gecko": "eth", "explorer_name": "Etherscan", "gmgn": "eth", "explorer": "https://etherscan.io/address/", "tx": "https://etherscan.io/tx/",
                  "etherscan_free": True, "blockscout": "https://eth.blockscout.com/api", "wrapped": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "block_time": 12},
-    "bsc": {"name": "BNB Chain", "kind": "evm", "chain_id": 56, "native": "BNB", "kraken": "BNBUSD", "dexscreener": "bsc", "gecko": "bsc", "explorer": "https://bscscan.com/address/", "tx": "https://bscscan.com/tx/",
+    "bsc": {"name": "BNB Chain", "kind": "evm", "chain_id": 56, "native": "BNB", "kraken": "BNBUSD", "dexscreener": "bsc", "gecko": "bsc", "explorer_name": "BscScan", "gmgn": "bsc", "explorer": "https://bscscan.com/address/", "tx": "https://bscscan.com/tx/",
             "etherscan_free": False, "blockscout": None, "wrapped": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c", "block_time": 0.75},
-    "base": {"name": "Base", "kind": "evm", "chain_id": 8453, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "base", "gecko": "base", "explorer": "https://basescan.org/address/", "tx": "https://basescan.org/tx/",
+    "base": {"name": "Base", "kind": "evm", "chain_id": 8453, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "base", "gecko": "base", "explorer_name": "BaseScan", "gmgn": "base", "explorer": "https://basescan.org/address/", "tx": "https://basescan.org/tx/",
              "etherscan_free": False, "blockscout": "https://base.blockscout.com/api", "wrapped": "0x4200000000000000000000000000000000000006", "block_time": 2},
-    "arbitrum": {"name": "Arbitrum", "kind": "evm", "chain_id": 42161, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "arbitrum", "gecko": "arbitrum", "explorer": "https://arbiscan.io/address/", "tx": "https://arbiscan.io/tx/",
+    "arbitrum": {"name": "Arbitrum", "kind": "evm", "chain_id": 42161, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "arbitrum", "gecko": "arbitrum", "explorer_name": "Arbiscan", "gmgn": None, "explorer": "https://arbiscan.io/address/", "tx": "https://arbiscan.io/tx/",
                  "etherscan_free": True, "blockscout": "https://arbitrum.blockscout.com/api", "wrapped": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", "block_time": 0.25},
-    "polygon": {"name": "Polygon", "kind": "evm", "chain_id": 137, "native": "POL", "kraken": "POLUSD", "dexscreener": "polygon", "gecko": "polygon_pos", "explorer": "https://polygonscan.com/address/", "tx": "https://polygonscan.com/tx/",
+    "polygon": {"name": "Polygon", "kind": "evm", "chain_id": 137, "native": "POL", "kraken": "POLUSD", "dexscreener": "polygon", "gecko": "polygon_pos", "explorer_name": "PolygonScan", "gmgn": None, "explorer": "https://polygonscan.com/address/", "tx": "https://polygonscan.com/tx/",
                 "etherscan_free": True, "blockscout": "https://polygon.blockscout.com/api", "wrapped": "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270", "block_time": 2},
-    "robinhood": {"name": "Robinhood Chain", "kind": "evm", "chain_id": 4663, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "robinhood", "gecko": "robinhood", "explorer": "https://robinhoodchain.blockscout.com/address/", "tx": "https://robinhoodchain.blockscout.com/tx/",
+    "robinhood": {"name": "Robinhood Chain", "kind": "evm", "chain_id": 4663, "native": "ETH", "kraken": "ETHUSD", "dexscreener": "robinhood", "gecko": "robinhood", "explorer_name": "Blockscout", "gmgn": None, "explorer": "https://robinhoodchain.blockscout.com/address/", "tx": "https://robinhoodchain.blockscout.com/tx/",
                   "etherscan_free": None, "blockscout": "https://robinhoodchain.blockscout.com/api", "blockscout_pro": True, "wrapped": None, "block_time": 0.1},
 }
 

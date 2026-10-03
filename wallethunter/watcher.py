@@ -11,9 +11,9 @@ log = logging.getLogger("wh")
 
 def targets(c):
     a = cfg()["alerts"]
-    rows = [(r["chain"], r["address"], r["alias"]) for r in c.execute("SELECT chain, address, alias FROM favorites")]
+    rows = [(r["chain"], r["address"], r["alias"]) for r in c.execute("SELECT f.chain, f.address, COALESCE(a.alias, f.alias) alias FROM favorites f LEFT JOIN aliases a ON a.chain=f.chain AND a.address=f.address")]
     if a.get("watch") == "favorites+smart":
-        for r in c.execute("SELECT chain, address, alias FROM wallets WHERE tags LIKE '%\"smart\"%'"):
+        for r in c.execute("SELECT w.chain, w.address, a.alias FROM wallets w LEFT JOIN aliases a ON a.chain=w.chain AND a.address=w.address WHERE w.tags LIKE '%\"smart\"%'"):
             rows.append((r["chain"], r["address"], r["alias"]))
     return list(dict.fromkeys(rows))[:60]
 

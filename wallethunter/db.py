@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS funders(
   chain TEXT, address TEXT, funder TEXT, funder_label TEXT, amount REAL, ts INTEGER, first_tx_ts INTEGER, checked INTEGER,
   PRIMARY KEY(chain, address));
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
+-- alias privados (como los favoritos: solo los sirve el box con PIN, no van al data.json público)
+CREATE TABLE IF NOT EXISTS aliases(chain TEXT, address TEXT, alias TEXT, updated INTEGER, PRIMARY KEY(chain, address));
 """
 
 _local = threading.local()
@@ -62,6 +64,10 @@ def connect(path=None):
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
         c.executescript(SCHEMA)
+        # migración: alias antiguos (columna wallets.alias / favoritos) -> tabla privada
+        c.execute("INSERT OR IGNORE INTO aliases SELECT chain, address, alias, strftime('%s','now') FROM wallets WHERE alias IS NOT NULL AND alias<>''")
+        c.execute("INSERT OR IGNORE INTO aliases SELECT chain, address, alias, added FROM favorites WHERE alias IS NOT NULL AND alias<>''")
+        c.commit()
         if not hasattr(_local, "conns"):
             _local.conns = {}
         _local.conns[path] = c
@@ -103,3 +109,18 @@ def insert_swaps(c, rows):
 def insert_transfers(c, rows):
     c.executemany("INSERT OR REPLACE INTO transfers(chain,wallet,counterparty,direction,asset,amount,amount_native,ts,tx) VALUES(?,?,?,?,?,?,?,?,?)",
                   [(r["chain"], r["wallet"], r["counterparty"], r["direction"], r["asset"], r.get("amount"), r.get("amount_native"), r["ts"], r["tx"]) for r in rows])
+
+
+def aliases(c):
+    return [dict(r) for r in c.execute("SELECT chain, address, alias, updated FROM aliases ORDER BY updated DESC")]
+
+
+def set_alias(c, chain, address, alias):
+    alias = (str(alias).strip()[:40] if alias else "") or None
+    if alias:
+        c.execute("INSERT INTO aliases(chain,address,alias,updated) VALUES(?,?,?,strftime('%s','now')) ON CONFLICT(chain,address) DO UPDATE SET alias=excluded.alias, updated=excluded.updated",
+                  (chain, address, alias))
+    else:
+        c.execute("DELETE FROM aliases WHERE chain=? AND address=?", (chain, address))
+    c.commit()
+    return alias
