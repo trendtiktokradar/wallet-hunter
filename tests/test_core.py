@@ -235,6 +235,12 @@ class TestServer(unittest.TestCase):
         self.assertIn(A, [a["address"] for a in r["aliases"]])   # el alias del favorito también queda guardado
         code, r = post("/api/aliases", {"pin": "482913", "op": "set", "chain": "solana", "address": B, "alias": ""})
         self.assertNotIn(B, [a["address"] for a in r["aliases"]])
+        code, r = post("/api/groups", {"pin": "482913", "op": "save", "group": {"name": "insiders bob", "emoji": "🐸", "chain": "solana", "wallets": [A, B], "source": "cluster:SOL-C1"}})
+        self.assertEqual(code, 200); gid = r["id"]
+        self.assertEqual(r["groups"][0]["emoji"], "🐸"); self.assertEqual(r["groups"][0]["wallets"], [A, B])
+        self.assertEqual(post("/api/groups", {"pin": "482913", "op": "save", "group": {"name": "", "wallets": [A]}})[0], 400)
+        code, r = post("/api/groups", {"pin": "482913", "op": "delete", "id": gid})
+        self.assertEqual(r["groups"], [])
         code, r = post("/api/settings", {"pin": "482913", "alerts": {"min_inflow_usd": 5000, "enabled": False}})
         self.assertEqual(r["alerts"]["min_inflow_usd"], 5000)
         srv.shutdown()

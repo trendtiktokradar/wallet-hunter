@@ -4,6 +4,7 @@
   POST /api/scan      {pin, kind: tokens|wallets, chain, items}
   POST /api/favs      {pin, op: list|add|remove|alias, chain, address, alias}
   POST /api/aliases   {pin, op: list|set, chain, address, alias}   (alias vacío = borrar)
+  POST /api/groups    {pin, op: list|save|delete, group: {id?, name, emoji, chain, wallets[], source}, id}
   POST /api/settings  {pin, alerts?}      -> devuelve ajustes actuales
   POST /api/alerts    {pin}               -> últimas alertas
 """
@@ -61,7 +62,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            if n > 20000:
+            if n > 200000:
                 return self._send(413, {"error": "demasiado grande"})
             req = json.loads(self.rfile.read(n) or b"{}")
         except Exception:
@@ -104,6 +105,14 @@ class H(BaseHTTPRequestHandler):
                         raise ValueError("faltan chain/address")
                     db.set_alias(c, ch, a, req.get("alias"))
                 return self._send(200, {"ok": True, "aliases": db.aliases(c)})
+            if p == "/api/groups":
+                op = req.get("op", "list")
+                gid = None
+                if op == "save":
+                    gid = db.save_group(c, req.get("group") or {})
+                elif op == "delete":
+                    db.delete_group(c, req.get("id"))
+                return self._send(200, {"ok": True, "id": gid, "groups": db.groups(c)})
             if p == "/api/settings":
                 if isinstance(req.get("alerts"), dict):
                     a = req["alerts"]

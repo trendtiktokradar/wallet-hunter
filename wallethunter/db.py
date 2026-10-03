@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS funders(
   PRIMARY KEY(chain, address));
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 -- alias privados (como los favoritos: solo los sirve el box con PIN, no van al data.json público)
+-- grupos exportados/guardados desde la web (privados, con PIN): nombre + emoji + wallets
+CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT, emoji TEXT, chain TEXT, wallets TEXT, source TEXT, created INTEGER, updated INTEGER);
 CREATE TABLE IF NOT EXISTS aliases(chain TEXT, address TEXT, alias TEXT, updated INTEGER, PRIMARY KEY(chain, address));
 """
 
@@ -124,3 +126,36 @@ def set_alias(c, chain, address, alias):
         c.execute("DELETE FROM aliases WHERE chain=? AND address=?", (chain, address))
     c.commit()
     return alias
+
+
+def groups(c):
+    out = []
+    for r in c.execute("SELECT * FROM groups ORDER BY updated DESC"):
+        d = dict(r); d["wallets"] = json.loads(d["wallets"] or "[]"); out.append(d)
+    return out
+
+
+def save_group(c, g):
+    import re, time, hashlib
+    name = str(g.get("name") or "").strip()[:40]
+    emoji = str(g.get("emoji") or "").strip()[:8]
+    ws = g.get("wallets") or []
+    if not name or not isinstance(ws, list) or not ws:
+        raise ValueError("faltan nombre o wallets")
+    ws = [str(w).strip() for w in ws if isinstance(w, str) and 20 <= len(w.strip()) <= 64][:2000]
+    if not ws:
+        raise ValueError("wallets no válidas")
+    chain = str(g.get("chain") or "")[:20] or None
+    gid = str(g.get("id") or "")[:40] or hashlib.sha1((name + emoji + ",".join(ws)).encode()).hexdigest()[:12]
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", gid):
+        raise ValueError("id no válido")
+    now = int(time.time())
+    c.execute("""INSERT INTO groups(id,name,emoji,chain,wallets,source,created,updated) VALUES(?,?,?,?,?,?,?,?)
+                 ON CONFLICT(id) DO UPDATE SET name=excluded.name, emoji=excluded.emoji, chain=excluded.chain, wallets=excluded.wallets, source=excluded.source, updated=excluded.updated""",
+              (gid, name, emoji, chain, json.dumps(ws), str(g.get("source") or "")[:60], now, now))
+    c.commit()
+    return gid
+
+
+def delete_group(c, gid):
+    c.execute("DELETE FROM groups WHERE id=?", (str(gid),)); c.commit()

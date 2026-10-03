@@ -3,10 +3,13 @@
   "use strict";
   var CFG = window.WH_CONFIG;
   var D = null, BOX = null, BOX_OK = false;
-  var S = { tab: "wallets", sort: "sc", asc: false, tags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
+  var S = { sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
   var FAVS = load("wh_favs", {});            // "chain:addr" -> {alias}
   var ALIASES = load("wh_aliases", {});      // "chain:addr" -> alias (privados: viven en el box, con PIN; aquí solo una copia local)
   var FRESH_DAYS = 7;
+  var GROUPS = load("wh_groups", []);        // grupos guardados en el box (con PIN); copia local para pintar sus emojis
+  var G_IDX = {};                            // dirección -> [{emoji, name}]
+  var EXP = null;                            // estado del diálogo «Exportar grupo»
   var PIN = localStorage.getItem("wh_pin") || "";
   var $ = function (id) { return document.getElementById(id); };
   var NOW = function () { return Date.now() / 1000; };
@@ -25,7 +28,10 @@
   function chainName(c) { return D && D.chains[c] ? D.chains[c].name : c; }
   function scoreColor(s) { if (s == null) return "#475569"; if (s >= 70) return "#4ade80"; if (s >= 55) return "#a3e635"; if (s >= 40) return "#facc15"; if (s >= 25) return "#fb923c"; return "#94a3b8"; }
   function toast(msg, ms) { var t = $("toast"); t.innerHTML = msg; t.classList.remove("hide"); clearTimeout(t._h); t._h = setTimeout(function () { t.classList.add("hide"); }, ms || 3500); }
-  function copy(txt) { (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast("Copiado: " + esc(short(txt))); }, function () { prompt("Copia:", txt); }); }
+  function copy(txt, what) {
+    var fallback = function () { var ta = document.createElement("textarea"); ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); var ok = false; try { ok = document.execCommand("copy"); } catch (e) { } ta.remove(); if (ok) toast("Copiado: " + esc(what || short(txt))); else prompt("Copia:", txt); };
+    (navigator.clipboard && window.isSecureContext ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast("Copiado: " + esc(what || short(txt))); }, fallback);
+  }
   function key(w) { return w.c + ":" + w.a; }
   function isFav(w) { return !!FAVS[key(w)]; }
   function tagDef(id) { return (D.tagIdx || {})[id] || { label: id, help: "", color: "gray" }; }
@@ -54,7 +60,7 @@
   function setData(d) {
     D = d; D.tagIdx = {}; d.tags.forEach(function (t) { D.tagIdx[t.id] = t; });
     D.wIdx = {}; d.wallets.forEach(function (w) { D.wIdx[key(w)] = w; }); applyAliases();
-    if (d.box && d.box.url && d.box.url !== BOX) { BOX = d.box.url; checkBox(); }
+    if (!CFG.local && d.box && d.box.url && d.box.url !== BOX) { BOX = d.box.url; checkBox(); }
     renderAll();
   }
   function findBox() {
@@ -96,6 +102,14 @@
     }).catch(function () { });
   }
 
+  function buildGroupIdx() { G_IDX = {}; (GROUPS || []).forEach(function (g) { (g.wallets || []).forEach(function (a) { (G_IDX[a] = G_IDX[a] || []).push({ emoji: g.emoji, name: g.name }); }); }); }
+  buildGroupIdx();
+  function groupBadges(w) { return (G_IDX[w.a] || []).map(function (g) { return '<span class="gem" data-tip="Grupo guardado: ' + esc((g.emoji ? g.emoji + " " : "") + g.name) + '">' + esc(g.emoji || "🏷️") + "</span>"; }).join(""); }
+  function setGroups(list) { GROUPS = (list || []).map(function (g) { return { id: g.id, name: g.name, emoji: g.emoji, chain: g.chain, wallets: g.wallets, source: g.source }; }); save("wh_groups", GROUPS); buildGroupIdx(); }
+  function syncGroups() {
+    if (!BOX_OK || !PIN) return Promise.resolve();
+    return api("/api/groups", { op: "list" }).then(function (r) { setGroups(r.groups); renderAll(); }).catch(function () { });
+  }
   function setAliases(list) { var m = {}; (list || []).forEach(function (a) { m[a.chain + ":" + a.address] = a.alias; }); ALIASES = m; save("wh_aliases", ALIASES); applyAliases(); }
   function syncAliases() {
     if (!BOX_OK || !PIN) return Promise.resolve();
@@ -158,7 +172,7 @@
     var grp = $("fGroup").value, act = $("fAct").value, fav = $("fFav").checked || onlyFavs, hide = $("fHide").checked;
     var origin = S.origin;
     return chainWallets().filter(function (w) {
-      if (q && w.a.toLowerCase().indexOf(q) < 0 && (w.al || "").toLowerCase().indexOf(q) < 0) return false;
+      if (q && w.a.toLowerCase().indexOf(q) < 0 && (w.al || "").toLowerCase().indexOf(q) < 0 && !(G_IDX[w.a] || []).some(function (g) { return (g.name || "").toLowerCase().indexOf(q) >= 0; })) return false;
       if (sc != null && (w.sc || 0) < sc) return false;
       if (pn != null && (w.pn == null || w.pn < pn)) return false;
       if (wr != null && (w.wr == null || w.wr * 100 < wr)) return false;
@@ -199,12 +213,12 @@
       ' <span class="muted small">→ ' + rows.length + " wallet" + (rows.length === 1 ? "" : "s") + '</span> <button class="clrtags right" id="clrTags">✕ Quitar filtros de etiquetas</button>';
   }
   var COLS = [
-    ["fav", "⭐", "l"], ["i", "#", ""], ["a", "Wallet", "l"], ["x", "Ver en", "l"], ["c", "Chain", "l"], ["sc", "Score", ""], ["pn", "PnL nativo", ""], ["pu", "PnL USD", ""], ["roi", "ROI", ""],
+    ["sel", '<input type="checkbox" class="selcb" id="selAll" title="Seleccionar todas las visibles">', "l"], ["fav", "⭐", "l"], ["i", "#", ""], ["a", "Wallet", "l"], ["x", "Ver en", "l"], ["c", "Chain", "l"], ["sc", "Score", ""], ["pn", "PnL nativo", ""], ["pu", "PnL USD", ""], ["roi", "ROI", ""],
     ["wr", "Win rate", ""], ["tk", "Tokens", ""], ["tr", "Trades", ""], ["ho", "Hold med.", ""], ["en", "Entrada med.", ""], ["sz", "Tamaño med.", ""], ["bal", "Saldo", ""],
     ["ft", "Edad", ""], ["la", "Última act.", ""], ["cl", "Cluster / bundles", "l"], ["tg", "Etiquetas", "l"]
   ];
-  var NOSORT = { x: 1, i: 1 };
-  var TIPS = { i: "🌱 = wallet fresca: primera transacción (o primer fondeo) hace menos de 7 días", x: "Abrir la wallet en el explorador de la chain y en GMGN (si la chain está soportada)", tr: "Nº total de trades (compras + ventas) en los últimos 30 días. '≥' = historial truncado, como mínimo", a: "Dirección y alias (✎ para editarlo; se guarda en tu box con PIN y se puede buscar)", pn: "PnL realizado + no realizado de los últimos 30 días, en la moneda nativa de la chain (SOL, ETH, BNB…)", pu: "PnL nativo × precio actual (Kraken)", roi: "PnL ÷ total invertido en compras", wr: "% de tokens con beneficio (entre paréntesis, nº de tokens)", ho: "Mediana del tiempo entre la primera compra y la venta", en: "Mediana del tiempo desde el lanzamiento del token hasta su primera compra", sz: "Compra media en moneda nativa", bal: "Saldo nativo actual", ft: "Antigüedad de la wallet (primera transacción). '>' = historial demasiado largo, como mínimo", sc: "Score 0-100: win rate, PnL, ROI, consistencia, nº de tokens y entrada temprana; penaliza bots, bundles, insiders y rugs" };
+  var NOSORT = { x: 1, i: 1, sel: 1 };
+  var TIPS = { sel: "Marca wallets para exportarlas como grupo (Axiom / GMGN / CSV)", i: "🌱 = wallet fresca: primera transacción (o primer fondeo) hace menos de 7 días", x: "Abrir la wallet en el explorador de la chain y en GMGN (si la chain está soportada)", tr: "Nº total de trades (compras + ventas) en los últimos 30 días. '≥' = historial truncado, como mínimo", a: "Dirección y alias (✎ para editarlo; se guarda en tu box con PIN y se puede buscar)", pn: "PnL realizado + no realizado de los últimos 30 días, en la moneda nativa de la chain (SOL, ETH, BNB…)", pu: "PnL nativo × precio actual (Kraken)", roi: "PnL ÷ total invertido en compras", wr: "% de tokens con beneficio (entre paréntesis, nº de tokens)", ho: "Mediana del tiempo entre la primera compra y la venta", en: "Mediana del tiempo desde el lanzamiento del token hasta su primera compra", sz: "Compra media en moneda nativa", bal: "Saldo nativo actual", ft: "Antigüedad de la wallet (primera transacción). '>' = historial demasiado largo, como mínimo", sc: "Score 0-100: win rate, PnL, ROI, consistencia, nº de tokens y entrada temprana; penaliza bots, bundles, insiders y rugs" };
   function sortVal(w, k) {
     if (k === "fav") return isFav(w) ? 1 : 0;
     if (k === "ft") return w.ft ? -w.ft : null;
@@ -224,13 +238,15 @@
     var th = COLS.map(function (c) { return '<th class="' + c[2] + (S.sort === c[0] ? " sorted" + (S.asc ? " asc" : "") : "") + '"' + (NOSORT[c[0]] ? "" : ' data-sort="' + c[0] + '"') + (TIPS[c[0]] ? ' data-tip="' + esc(TIPS[c[0]]) + '"' : "") + ">" + c[1] + "</th>"; }).join("");
     document.querySelector("#tbl thead").innerHTML = "<tr>" + th + "</tr>";
     var bIdx = {}; D.bundles.forEach(function (b, i) { bIdx[b.id] = i + 1; });
+    S.visible = rows.slice(0, S.limit).map(key);
     var html = rows.slice(0, S.limit).map(function (w, i) {
       var tags = w.tg.slice(0, 7).map(function (t) { var d = tagDef(t); return '<span class="tag c-' + d.color + '" data-tip="' + esc(d.help) + '">' + esc(d.label) + "</span>"; }).join("") + (w.tg.length > 7 ? '<span class="mini">+' + (w.tg.length - 7) + "</span>" : "");
       var grp = (w.cl ? '<span class="cl">' + w.cl + "</span> " : "") + ((w.bu || []).length ? '<span class="mini">' + w.bu.length + " bundle" + (w.bu.length > 1 ? "s" : "") + "</span>" : "");
       return '<tr data-k="' + esc(key(w)) + '">' +
+        '<td class="l"><input type="checkbox" class="selcb" data-sel="' + esc(key(w)) + '"' + (S.sel[key(w)] ? " checked" : "") + "></td>" +
         '<td class="l"><button class="star ' + (isFav(w) ? "on" : "") + '" data-star="' + esc(key(w)) + '">' + (isFav(w) ? "★" : "☆") + "</button></td>" +
         '<td class="nowrap">' + (i + 1) + (isFresh(w) ? '<span class="leaf" data-tip="' + esc(freshTip(w)) + '">🌱</span>' : "") + "</td>" +
-        '<td class="l"><span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button></td>' +
+        '<td class="l">' + groupBadges(w) + '<span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button></td>' +
         '<td class="l nowrap">' + exLinks(w) + "</td>" +
         '<td class="l"><span class="chainpill">' + esc(chainName(w.c)) + "</span></td>" +
         '<td><span class="score" style="background:' + scoreColor(w.sc) + '">' + (w.sc == null ? "–" : Math.round(w.sc)) + "</span></td>" +
@@ -242,7 +258,103 @@
     }).join("");
     document.querySelector("#tbl tbody").innerHTML = html || '<tr><td colspan="' + COLS.length + '" class="l muted" style="padding:20px">No hay wallets con estos filtros. ' + (D.wallets.length ? "" : "Escanea un token en «Escanear / Añadir».") + "</td></tr>";
     $("moreBtn").classList.toggle("hide", rows.length <= S.limit);
+    var all = $("selAll"); if (all) all.checked = S.visible.length > 0 && S.visible.every(function (k) { return S.sel[k]; });
+    renderSelBar();
   }
+
+  // ---------------------------------------------------------------- exportar grupo (Axiom / GMGN / CSV / JSON)
+  function renderSelBar() {
+    var n = Object.keys(S.sel).length, el = $("selBar");
+    el.classList.toggle("hide", !n);
+    if (n) el.innerHTML = "<b>" + n + "</b> wallet" + (n > 1 ? "s" : "") + ' seleccionada' + (n > 1 ? "s" : "") + ' <button class="exp" data-export="sel">📤 Exportar grupo</button> <button class="ghost" id="selClear">Quitar selección</button>';
+  }
+  var EMOJIS = ["🐸", "🧠", "🐋", "🎯", "👻", "🕵️", "🤖", "📦", "🕸️", "💀", "🔥", "⚡", "💎", "🚀", "🐀", "⭐"];
+  var GMGN_CH = { solana: "sol", ethereum: "eth", bsc: "bsc", base: "base" };
+  function exportSource(spec) {
+    var p = spec.split(":"), kind = p[0];
+    if (kind === "sel") {
+      var keys = S.visible.filter(function (k) { return S.sel[k]; }).concat(Object.keys(S.sel).filter(function (k) { return S.visible.indexOf(k) < 0; }));
+      return { title: "Selección manual", source: "selección", name: "selección", emoji: "⭐", ws: keys.map(function (k) { var i = k.indexOf(":"); return { c: k.slice(0, i), a: k.slice(i + 1) }; }) };
+    }
+    if (kind === "cluster") {
+      var c = D.clusters[+p[1]]; if (!c) return null;
+      var ws = c.w.map(function (a) { return D.wIdx[c.c + ":" + a] || { c: c.c, a: a }; }).sort(function (x, y) { return (y.sc || 0) - (x.sc || 0); });
+      var org = {}; ws.forEach(function (w) { (w.or || []).forEach(function (t) { org[t] = (org[t] || 0) + 1; }); });
+      var top = Object.keys(org).sort(function (x, y) { return org[y] - org[x]; })[0];
+      return { title: "Cluster " + c.id + " · " + chainName(c.c), source: "cluster:" + c.id, name: "cluster " + (top ? tokenSym(c.c, top) : c.id), emoji: "🕸️", ws: ws.map(function (w) { return { c: w.c, a: w.a }; }) };
+    }
+    if (kind === "bundle") {
+      var b = D.bundles[+p[1]]; if (!b) return null;
+      return { title: "Bundle del slot/bloque " + b.s + " · " + tokenSym(b.c, b.t), source: "bundle:" + b.id, name: "bundle " + tokenSym(b.c, b.t), emoji: "📦", ws: b.w.map(function (a) { return { c: b.c, a: a }; }) };
+    }
+    if (kind === "btok") {
+      var ch = p[1], tok = p.slice(2).join(":"), seen = {}, list = [];
+      D.bundles.filter(function (x) { return x.c === ch && x.t === tok; }).sort(function (x, y) { return x.s - y.s; }).forEach(function (x) { x.w.forEach(function (a) { if (!seen[a]) { seen[a] = 1; list.push({ c: ch, a: a }); } }); });
+      return { title: "Todos los bundlers de " + tokenSym(ch, tok), source: "bundlers:" + tok, name: "bundlers " + tokenSym(ch, tok), emoji: "📦", ws: list };
+    }
+    return null;
+  }
+  function openExport(spec) {
+    var src = exportSource(spec); if (!src || !src.ws.length) { toast("Grupo vacío"); return; }
+    EXP = src; EXP.alerts = true; EXP.inName = false;
+    var chains = {}; src.ws.forEach(function (w) { chains[w.c] = 1; }); EXP.chains = Object.keys(chains);
+    $("modalIn").innerHTML = '<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><h3>📤 Exportar grupo · ' + esc(src.title) + ' <span class="mini">(' + src.ws.length + ' wallets)</span></h3><button class="ghost right" data-mclose>✕</button></div>' +
+      '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0"><label>Emoji <input type="text" id="gEmoji" value="' + esc(src.emoji) + '" style="width:60px;font-size:16px;text-align:center" maxlength="8"></label>' +
+      '<label>Nombre del grupo <input type="text" id="gName" value="' + esc(src.name) + '" maxlength="40" style="width:220px"></label>' +
+      '<label class="chk"><input type="checkbox" id="gAlerts" checked> Alertas activadas (Axiom)</label>' +
+      '<label class="chk" data-tip="Axiom y GMGN ya muestran el emoji delante del nombre (campo aparte). Márcalo si quieres que además vaya escrito dentro del nombre."><input type="checkbox" id="gInName"> Emoji también dentro del nombre</label></div>' +
+      '<div class="emojis">' + EMOJIS.map(function (e) { return '<button data-emo="' + e + '">' + e + "</button>"; }).join("") + "</div>" +
+      '<div class="mini" style="margin:6px 0">Cada wallet se etiqueta como <b id="gPrev"></b> … (numeradas por score). Nombres cortos se leen mejor en las alertas.</div>' +
+      (EXP.chains.length > 1 ? '<div class="warnbox">Este grupo mezcla chains (' + EXP.chains.map(chainName).join(", ") + '). Axiom y GMGN importan por chain: mejor exporta cada chain por separado (filtra la tabla por chain y selecciona).</div>' : "") +
+      fmtBlock("axiom", "Axiom · Wallet Tracker → Import", '<span class="badge-ok" data-tip="Formato de importación del Wallet Tracker de Axiom según guías públicas (PANews/AiCoin), la documentación de BonkBot y conversores de terceros. No hay página oficial de Axiom con el esquema ni se ha probado la importación en Axiom desde aquí.">formato corroborado (no oficial)</span>', "Abre el Wallet Tracker (abajo a la izquierda) → Import → pega o sube el fichero." + (EXP.chains[0] !== "solana" ? " ⚠️ Axiom es sobre todo Solana: puede no aceptar wallets EVM." : "")) +
+      fmtBlock("gmgn", "GMGN · Follow / Wallet tracker → importación masiva", '<span class="badge-ok" data-tip="Formato oficial según docs.gmgn.ai/index/wallets-import-export: array JSON con address, name y emoji. Máximo 2.000 wallets seguidas.">formato oficial (docs GMGN)</span>', "gmgn.ai/follow → botón de importar/exportar arriba a la derecha → pega el texto. Máx. 2.000 wallets seguidas en total." + (GMGN_CH[EXP.chains[0]] ? " Selecciona antes la chain <b>" + GMGN_CH[EXP.chains[0]].toUpperCase() + "</b> en GMGN." : " ⚠️ GMGN no soporta esta chain.")) +
+      fmtBlock("csv", "CSV simple (dirección,nombre)", '<span class="badge-guess">genérico</span>', "Para hojas de cálculo, bots de Telegram (/wimport) u otras herramientas.") +
+      fmtBlock("json", "JSON simple", '<span class="badge-guess">genérico</span>', "Dirección, chain y etiqueta completa.") +
+      '<div class="row" style="margin-top:12px"><button class="primary" id="grpSave">💾 Guardar grupo en el box (PIN)</button><span class="mini">Guardado, su emoji aparece junto a esas wallets en la tabla y puedes buscar por el nombre del grupo. Privado: no se publica.</span></div>';
+    $("modal").classList.remove("hide");
+    updateExport();
+  }
+  function fmtBlock(id, title, badge, help) {
+    return '<div class="fmt"><div class="hd"><b>' + title + "</b> " + badge + ' <span class="right"></span><button class="ghost" data-cpout="' + id + '">📋 Copiar</button><button class="ghost" data-dl="' + id + '">⬇️ Descargar</button></div>' +
+      '<div class="mini" style="margin-bottom:6px">' + help + '</div><textarea readonly id="out-' + id + '" spellcheck="false"></textarea></div>';
+  }
+  function expOutputs() {
+    var em = ($("gEmoji").value || "").trim(), nm = ($("gName").value || "").trim() || "grupo", al = $("gAlerts").checked, inName = $("gInName").checked;
+    var full = function (i) { return (em ? em + " " : "") + nm + " " + i; };
+    var nameOnly = function (i) { return (inName && em ? em + " " : "") + nm + " " + i; };
+    var ws = EXP.ws;
+    var csvq = function (x) { return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+    return {
+      em: em, nm: nm, prev: full(1),
+      axiom: JSON.stringify(ws.map(function (w, i) { return { trackedWalletAddress: w.a, name: nameOnly(i + 1), emoji: em || "👀", alertsOn: al }; }), null, 2),
+      gmgn: JSON.stringify(ws.map(function (w, i) { return { address: w.a, name: nameOnly(i + 1), emoji: em || "👀" }; }), null, 2),
+      csv: "address,name\n" + ws.map(function (w, i) { return w.a + "," + csvq(full(i + 1)); }).join("\n") + "\n",
+      json: JSON.stringify(ws.map(function (w, i) { return { address: w.a, chain: w.c, name: full(i + 1) }; }), null, 2)
+    };
+  }
+  function updateExport() {
+    if (!EXP) return; var o = expOutputs();
+    $("gPrev").textContent = o.prev;
+    ["axiom", "gmgn", "csv", "json"].forEach(function (id) { $("out-" + id).value = o[id]; });
+    document.querySelectorAll("#modalIn [data-emo]").forEach(function (b) { b.classList.toggle("on", b.dataset.emo === o.em); });
+  }
+  function slug(x) { return (x || "grupo").toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "grupo"; }
+  function download(id) {
+    var o = expOutputs(), ext = id === "csv" ? "csv" : "json";
+    var name = (id === "axiom" ? "axiom-" : id === "gmgn" ? "gmgn-" : "wallets-") + slug(o.nm) + "." + ext;
+    var blob = new Blob([o[id]], { type: id === "csv" ? "text/csv;charset=utf-8" : "application/json" });
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast("Descargado: " + esc(name));
+  }
+  function saveGroup() {
+    if (!needPin()) return;
+    var o = expOutputs();
+    api("/api/groups", { op: "save", group: { name: o.nm, emoji: o.em, chain: EXP.chains.length === 1 ? EXP.chains[0] : null, wallets: EXP.ws.map(function (w) { return w.a; }), source: EXP.source } })
+      .then(function (r) { setGroups(r.groups); toast("Grupo guardado: " + esc(o.prev.replace(/ 1$/, ""))); renderAll(); })
+      .catch(function (e) { toast("No se pudo guardar: " + esc(e.message)); });
+  }
+  function closeModal() { $("modal").classList.add("hide"); EXP = null; }
 
   // ---------------------------------------------------------------- detalle
   function openWallet(k) {
@@ -288,8 +400,8 @@
     var h = '<div class="box"><h3>Bundles detectados (' + bs.length + ')</h3><div class="note">Bundle = 2+ wallets que compran en el mismo slot/bloque en los primeros instantes del token (3+ si es más tarde). Suele indicar un mismo operador (Jito bundles, bots de lanzamiento).</div></div>';
     Object.keys(by).forEach(function (k) {
       var p = k.split(":"), list = by[k].sort(function (a, b) { return a.s - b.s; });
-      h += '<div class="box"><h3>' + esc(tokenSym(p[0], p[1])) + ' <span class="chainpill">' + esc(chainName(p[0])) + '</span> <span class="mini">' + list.length + ' bundles</span></h3><table class="list"><tr><th>Slot/bloque</th><th>Hora</th><th>Wallets</th><th>Total</th></tr>' +
-        list.map(function (b) { return "<tr><td>" + b.s + "</td><td>" + fmtDate(b.ts) + "</td><td>" + b.w.map(function (a) { return walletLink(b.c, a); }).join(" · ") + "</td><td>" + (b.n == null ? "–" : num(b.n) + " " + nat(b.c)) + "</td></tr>"; }).join("") + "</table></div>";
+      h += '<div class="box"><h3>' + esc(tokenSym(p[0], p[1])) + ' <span class="chainpill">' + esc(chainName(p[0])) + '</span> <span class="mini">' + list.length + ' bundles</span> <button class="exp" data-export="btok:' + esc(k) + '">📤 Exportar todos los bundlers</button></h3><div style="overflow:auto"><table class="list"><tr><th>Slot/bloque</th><th>Hora</th><th>Wallets</th><th>Total</th><th></th></tr>' +
+        list.map(function (b) { return "<tr><td>" + b.s + "</td><td>" + fmtDate(b.ts) + "</td><td>" + b.w.map(function (a) { return walletLink(b.c, a); }).join(" · ") + "</td><td>" + (b.n == null ? "–" : num(b.n) + " " + nat(b.c)) + '</td><td><button class="exp" data-export="bundle:' + D.bundles.indexOf(b) + '">📤 Exportar</button></td></tr>'; }).join("") + "</table></div></div>";
     });
     $("bundlesBox").innerHTML = h;
   }
@@ -313,7 +425,7 @@
       var ws = c.w.map(function (a) { return D.wIdx[c.c + ":" + a]; }).filter(Boolean).sort(function (a, b) { return (b.sc || 0) - (a.sc || 0); });
       var kinds = {}; ws.forEach(function (w) { (w.lk || []).forEach(function (l) { kinds[l[1]] = (kinds[l[1]] || 0) + 1; }); });
       var pn = ws.reduce(function (s, w) { return s + (w.pn || 0); }, 0);
-      h += '<div class="box"><h3><span class="cl">' + esc(c.id) + '</span> <span class="chainpill">' + esc(chainName(c.c)) + "</span> " + c.n + ' wallets · PnL conjunto ' + signed(pn, 2) + " " + nat(c.c) + ' <span class="mini">' + Object.keys(kinds).map(function (k) { return esc(k); }).join(" · ") + "</span></h3>" +
+      h += '<div class="box"><h3><span class="cl">' + esc(c.id) + '</span> <span class="chainpill">' + esc(chainName(c.c)) + "</span> " + c.n + ' wallets · PnL conjunto ' + signed(pn, 2) + " " + nat(c.c) + ' <span class="mini">' + Object.keys(kinds).map(function (k) { return esc(k); }).join(" · ") + '</span> <button class="exp" data-export="cluster:' + D.clusters.indexOf(c) + '">📤 Exportar grupo</button></h3>' +
         ws.slice(0, 60).map(function (w) { return walletLink(w.c, w.a); }).join(" · ") + (ws.length > 60 ? " …" : "") + "</div>";
     });
     $("connBox").innerHTML = h;
@@ -412,8 +524,17 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-origin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
-    if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); return; }
+    var t = e.target.closest("[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-origin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
+    if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
+    if (t.dataset.sel) { e.stopPropagation(); if (t.checked) S.sel[t.dataset.sel] = 1; else delete S.sel[t.dataset.sel]; var all0 = $("selAll"); if (all0) all0.checked = S.visible.length > 0 && S.visible.every(function (k) { return S.sel[k]; }); return renderSelBar(); }
+    if (t.id === "selAll") { S.visible.forEach(function (k) { if (t.checked) S.sel[k] = 1; else delete S.sel[k]; }); document.querySelectorAll("#tbl [data-sel]").forEach(function (c) { c.checked = !!S.sel[c.dataset.sel]; }); return renderSelBar(); }
+    if (t.id === "selClear") { S.sel = {}; return renderAll(); }
+    if (t.dataset.export) { e.preventDefault(); e.stopPropagation(); return openExport(t.dataset.export); }
+    if (t.dataset.emo) { $("gEmoji").value = t.dataset.emo; return updateExport(); }
+    if (t.dataset.cpout) { return copy($("out-" + t.dataset.cpout).value, t.dataset.cpout.toUpperCase() + " (" + EXP.ws.length + " wallets)"); }
+    if (t.dataset.dl) return download(t.dataset.dl);
+    if (t.id === "grpSave") return saveGroup();
+    if (t.hasAttribute("data-mclose")) return closeModal();
     if (t.dataset.untag) { e.stopPropagation(); S.tags = S.tags.filter(function (x) { return x !== t.dataset.untag; }); return renderAll(); }
     if (t.id === "clrTags") { S.tags = []; return renderAll(); }
     if (t.dataset.tab) return goto(t.dataset.tab);
@@ -448,7 +569,8 @@
   document.addEventListener("mouseover", function (e) { var el = e.target.closest("[data-tip]"); if (el) showTip(el, e.clientX, e.clientY); else tip.classList.add("hide"); });
   document.addEventListener("touchstart", function (e) { var el = e.target.closest("[data-tip]"); if (!el) { tip.classList.add("hide"); return; } var t0 = e.touches[0]; lp = setTimeout(function () { showTip(el, t0.clientX, t0.clientY); }, 450); }, { passive: true });
   document.addEventListener("touchend", function () { clearTimeout(lp); setTimeout(function () { tip.classList.add("hide"); }, 2500); });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") $("drawer").classList.add("hide"); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { $("drawer").classList.add("hide"); closeModal(); } });
+  $("modal").addEventListener("input", updateExport);
 
   // ---------------------------------------------------------------- arranque
   function fillChains() { if (!D) return; var sel = $("chainSel"); if (sel.options.length > 1) return; Object.keys(D.chains).forEach(function (c) { var o = document.createElement("option"); o.value = c; o.textContent = D.chains[c].name; sel.appendChild(o); }); }
@@ -457,6 +579,6 @@
     var running = D && (D.jobs || []).some(function (j) { return j.status === "running" || j.status === "pending"; });
     setTimeout(function () { checkBox().then(tick); }, (running && BOX_OK ? 10 : CFG.refreshSeconds) * 1000);
   }
-  findBox().then(function () { if (PIN && BOX_OK) { syncFavs("list"); syncAliases(); } tick(); });
+  findBox().then(function () { if (PIN && BOX_OK) { syncFavs("list"); syncAliases(); syncGroups(); } tick(); });
   if (location.hash) { var h = location.hash.slice(1); if (["wallets", "favs", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h; setTimeout(function () { goto(S.tab); }, 300); }
 })();

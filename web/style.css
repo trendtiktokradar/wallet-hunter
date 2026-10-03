@@ -130,3 +130,23 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;min-width:1500px
   .tablewrap{max-height:none}
   .kv{grid-template-columns:110px 1fr}
 }
+
+/* exportar grupo */
+.selbar{position:sticky;top:58px;z-index:15;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px;padding:8px 12px;border:1px solid #8b5cf6;border-radius:9px;background:#1b1538}
+.selcb{width:16px;height:16px;cursor:pointer;accent-color:#8b5cf6}
+button.exp{background:#1e1b4b;border:1px solid #6d28d9;color:#ddd6fe;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;white-space:nowrap}
+button.exp:hover{background:#2e1065}
+.modal{position:fixed;inset:0;background:#050b16cc;z-index:60;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 10px}
+.modal-in{width:min(780px,100%);background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:16px}
+.modal-in h3{margin:0 0 8px}
+.modal-in textarea{width:100%;min-height:150px;background:#0a1322;border:1px solid var(--line2);border-radius:8px;color:#dbe7ff;font:11.5px ui-monospace,Menlo,monospace;padding:8px;resize:vertical}
+.emojis{display:flex;flex-wrap:wrap;gap:4px}
+.emojis button{background:var(--panel2);border:1px solid var(--line2);border-radius:7px;font-size:16px;padding:2px 6px;cursor:pointer}
+.emojis button.on{border-color:#8b5cf6;background:#2e1065}
+.fmt{border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px}
+.fmt .hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.badge-ok{font-size:10.5px;color:#86efac;border:1px solid #166534;border-radius:6px;padding:0 5px}
+.badge-guess{font-size:10.5px;color:#fde68a;border:1px solid #854d0e;border-radius:6px;padding:0 5px}
+.gem{cursor:help;margin-right:2px}
+@media (max-width:760px){.selbar{top:110px}.modal{padding:8px 4px}}
+.modal-in [data-mclose]{flex:0 0 auto!important;width:auto!important;margin-left:auto}
