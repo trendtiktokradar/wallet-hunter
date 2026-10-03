@@ -65,7 +65,9 @@
   }
   function findBox() {
     if (CFG.local) { BOX = "http://127.0.0.1:18795"; return checkBox(); }
+    // la API de GitHub tiene límite (60/h por IP sin login): si falla, se usa la copia raw (puede ir ~5 min retrasada)
     return fetchJSON(CFG.boxJsonUrl, { cache: "no-store", headers: { Accept: "application/vnd.github.raw+json" } })
+      .catch(function () { return CFG.boxRawUrl ? fetchJSON(CFG.boxRawUrl + "?t=" + Math.floor(NOW() / 60)) : null; })
       .then(function (b) { if (b && b.url) { BOX = b.url; return checkBox(); } }).catch(function () { });
   }
   function checkBox() {

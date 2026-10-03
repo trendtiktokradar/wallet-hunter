@@ -199,19 +199,27 @@ async def main():
                 await pg.locator("#selClear").click()
                 # desde un cluster y un bundle
                 await pg.locator('#tabs button[data-tab="conn"]').click(); await pg.wait_for_timeout(300)
-                await pg.locator('#connBox [data-export^="cluster:"]').first.click(); await pg.wait_for_timeout(300)
-                n1 = len(json.loads(await pg.locator("#out-gmgn").input_value()))
-                if D: ok(n1 == D["clusters"][0]["n"], tag + f"exportar cluster ({n1} wallets)")
-                await pg.keyboard.press("Escape")
+                if await pg.locator('#connBox [data-export^="cluster:"]').count():
+                    await pg.locator('#connBox [data-export^="cluster:"]').first.click(); await pg.wait_for_timeout(300)
+                    n1 = len(json.loads(await pg.locator("#out-gmgn").input_value()))
+                    if D: ok(n1 == D["clusters"][0]["n"], tag + f"exportar cluster ({n1} wallets)")
+                    await pg.keyboard.press("Escape")
                 await pg.locator('#tabs button[data-tab="bundles"]').click(); await pg.wait_for_timeout(300)
-                await pg.locator('#bundlesBox [data-export^="bundle:"]').first.click(); await pg.wait_for_timeout(300)
-                n2 = len(json.loads(await pg.locator("#out-axiom").input_value()))
-                ok(n2 >= 2, tag + f"exportar bundle ({n2} wallets)")
-                if shots: await pg.screenshot(path=shots + "/desktop-export.png")
-                await pg.keyboard.press("Escape")
-                await pg.locator('#bundlesBox [data-export^="btok:"]').first.click(); await pg.wait_for_timeout(300)
-                ok(len(json.loads(await pg.locator("#out-json").input_value())) >= n2, tag + "exportar todos los bundlers del token")
-                await pg.keyboard.press("Escape")
+                if await pg.locator('#bundlesBox [data-export^="bundle:"]').count():
+                    await pg.locator('#bundlesBox [data-export^="bundle:"]').first.click(); await pg.wait_for_timeout(300)
+                    n2 = len(json.loads(await pg.locator("#out-axiom").input_value()))
+                    ok(n2 >= 2, tag + f"exportar bundle ({n2} wallets)")
+                    await pg.keyboard.press("Escape")
+                    await pg.locator('#bundlesBox [data-export^="btok:"]').first.click(); await pg.wait_for_timeout(300)
+                    ok(len(json.loads(await pg.locator("#out-json").input_value())) >= n2, tag + "exportar todos los bundlers del token")
+                    await pg.keyboard.press("Escape")
+                else:
+                    print("--   " + tag + "sin bundles en los datos: prueba de exportar bundle omitida")
+                await pg.locator('#tabs button[data-tab="conn"]').click(); await pg.wait_for_timeout(300)
+                if await pg.locator('#connBox [data-export^="cluster:"]').count():
+                    await pg.locator('#connBox [data-export^="cluster:"]').first.click(); await pg.wait_for_timeout(400)
+                    if shots: await pg.screenshot(path=shots + "/desktop-export.png")
+                    await pg.keyboard.press("Escape")
                 await pg.locator('#tabs button[data-tab="wallets"]').click()
             else:
                 await pg.locator("#tbl").scroll_into_view_if_needed()
@@ -226,6 +234,9 @@ async def main():
                 await coin_tests(pg, D, tag, mobile)
             await ctx.close()
         await b.close()
+    net = [e for e in errs if "Failed to load resource" in e]
+    errs = [e for e in errs if e not in net]
+    if net: print("--   avisos de red (no son errores JS): %d × %s" % (len(net), net[0][:110]))
     ok(not errs, "sin errores JS" + ("" if not errs else ": " + " | ".join(errs[:5])))
     print("\n%d fallos" % len(fails)); sys.exit(1 if fails else 0)
 asyncio.run(main())

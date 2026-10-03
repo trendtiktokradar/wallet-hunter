@@ -6,6 +6,7 @@
   window.WH_CONFIG = {
     dataUrl: local ? "data.json" : "https://raw.githubusercontent.com/" + USER + "/" + REPO + "/data/data.json",
     boxJsonUrl: "https://api.github.com/repos/" + USER + "/" + REPO + "/contents/box.json?ref=data",
+    boxRawUrl: "https://raw.githubusercontent.com/" + USER + "/" + REPO + "/data/box.json",
     fallbackUrl: "data.json",
     vercelQueue: "/api/queue",
     local: local,
