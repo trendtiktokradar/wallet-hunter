@@ -1,0 +1,10 @@
+state/
+logs/
+.publish/
+__pycache__/
+*.pyc
+*.tmp
+.wh.lock
+screenshots/*.tmp
+web/data.json
+ref/
