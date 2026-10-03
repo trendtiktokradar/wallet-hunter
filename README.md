@@ -71,6 +71,17 @@ Si el box se reinicia hay que volver a lanzar `scripts/service.sh start` (igual 
 
 Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbrales de bundles/clusters, límites de cada API, alertas).
 
+## Panel: filtros y grupos
+- **Etiquetas**: todas siempre visibles; las seleccionadas resaltadas (✓), las que darían 0 resultados en gris; el número es cuántas wallets de la lista actual la tienen. Varias etiquetas = deben cumplirse todas (Y). «Quitar filtros de etiquetas» las limpia.
+- **🌱 Wallet fresca**: primera transacción (o, si no se conoce, primer fondeo) hace ≤ 7 días.
+- **Trades**: compras + ventas en 30 días (columna ordenable y filtro «Trades ≥»). «Fondeada hace < X h» usa la última entrada nativa ≥ 0,1 SOL / 0,005 ETH (`recent_funding_min_native`).
+- **Enlaces**: Solscan/Etherscan/explorador de la chain + GMGN (sol, eth, bsc, base).
+- **Alias** (✎) y **grupos guardados**: privados, en el box con PIN (`/api/aliases`, `/api/groups`); no van al `data.json` público. Se pueden buscar.
+- **Exportar grupo** (clusters, bundles, «todos los bundlers» de un token o selección manual con casillas): nombre + emoji y cada wallet queda como `<emoji> <nombre> <n>`.
+  - GMGN (formato oficial, docs.gmgn.ai): `[{"address","name","emoji"}]`, en gmgn.ai/follow → importar; máx. 2.000 wallets.
+  - Axiom (formato corroborado por guías y herramientas de terceros, no por docs oficiales): `[{"trackedWalletAddress","name","emoji","alertsOn"}]`, Wallet Tracker → Import.
+  - CSV `address,name` y JSON simple.
+
 ## Alertas de Telegram (apagadas por defecto)
 Se activan desde la pestaña ⭐ Mis wallets. Vigilan las ⭐ cada N minutos y avisan cuando les entra ≥ X $ (o ≥ X SOL),
 opcionalmente solo si viene de un exchange, de un fondeador conocido o de otra wallet de la base.
