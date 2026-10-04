@@ -48,11 +48,8 @@ button.primary:disabled{opacity:.5;cursor:wait}
 .taghelp{margin:4px 2px 6px}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
 .chip{border:1px solid;border-radius:12px;padding:2px 8px;font-size:11.5px;cursor:pointer;user-select:none;white-space:nowrap;background:transparent}
-.chip.sel{outline:2px solid #4ade80;outline-offset:1px;font-weight:700;filter:brightness(1.25);box-shadow:0 0 0 3px #16653455}
-.chip.sel::before{content:"✓ ";color:#4ade80}
-.chip.exc{outline:2px solid #f87171;outline-offset:1px;font-weight:600;text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:#f87171;background:#450a0a!important;color:#fecaca!important;opacity:1!important}
-.chip.exc::before{content:"✕ ";color:#f87171;display:inline-block;text-decoration:none}
-.chip{-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.chip.sel{outline:2px solid #fff;outline-offset:1px;font-weight:600;filter:brightness(1.25)}
+.chip.sel::before{content:"✓ "}
 .chip .n{opacity:.75;margin-left:4px}
 .chip.zero{color:#64748b!important;border-color:#334155!important;background:transparent!important;opacity:.55}
 .greyhint{color:#64748b;border:1px dashed #334155;border-radius:8px;padding:0 5px}
@@ -240,15 +237,3 @@ button.mini{padding:2px 7px;font-size:11px}
 .cklist td{font-size:12px}
 @media (max-width:900px){.ckgrid{grid-template-columns:1fr}.ckside{max-height:none}}
 @media (max-width:760px){#ckSvg .eh{stroke-width:24}.connseg{display:flex}.connseg button{flex:1;padding:8px 6px;font-size:12px}#ckSvg .nl{font-size:12px}}
-
-/* filtro de etiquetas de 3 estados */
-.tagbar{display:flex;gap:10px;align-items:flex-start;margin:4px 2px 6px}
-.tagbar .taghelp{margin:0;flex:1}
-button.noise{white-space:nowrap;font-weight:600}
-button.noise.on{border-color:#f87171;background:#3b1220;color:#fecdd3}
-.hl-inc{color:#4ade80}.hl-exc{color:#f87171}
-.tag.tx-inc{outline:1px solid #4ade80}
-.tag.tx-exc{outline:1px solid #f87171;text-decoration:line-through;text-decoration-color:#f87171}
-.tag.tx-exc .x{text-decoration:none;display:inline-block}
-.tagsel .lbl.sep{opacity:.6}
-@media (max-width:760px){.tagbar{flex-direction:column}}

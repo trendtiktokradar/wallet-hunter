@@ -212,83 +212,6 @@ async def delete_tests(pg, D, tag, mobile):
 FAILS = []
 SHOTS = None
 
-async def tag_tests(pg, ctx, D, tag, mobile):
-    def ok(cond, msg):
-        print(("OK   " if cond else "FAIL ") + msg)
-        if not cond: FAILS.append(msg)
-    async def total(): return int((await pg.locator("#fCount").inner_text()).split()[0])
-    async def state(t): return await pg.locator(f'#chips .chip[data-tag="{t}"]').get_attribute("aria-pressed")
-    async def tap(t):
-        el = pg.locator(f'#chips .chip[data-tag="{t}"]')
-        await el.scroll_into_view_if_needed()
-        if mobile:
-            bb = await el.bounding_box(); await pg.touchscreen.tap(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
-        else:
-            await el.click()
-        await pg.wait_for_timeout(250)
-    W = D["wallets"]; ids = {t["id"] for t in D["tags"]}
-    cnt = lambda f: sum(1 for w in W if f(w["tg"]))
-    inc = next(t for t in ("activa", "rentable", "temprano", "pumpfun") if t in ids and 0 < cnt(lambda g: t in g) < len(W))
-    exc = next(t for t in ("bot", "sniper", "bundle", "scalper", "una_vez") if t in ids and t != inc and cnt(lambda g: inc in g and t in g) > 0)
-    await pg.evaluate("window.scrollTo(0,0)")
-    await tap(inc); await tap(exc); await tap(exc)
-    ok(await state(inc) == "true" and await state(exc) == "mixed", tag + f"3 estados: {inc} ✓ con, {exc} ✕ sin")
-    ok("exc" in (await pg.locator(f'#chips .chip[data-tag="{exc}"]').get_attribute("class")) and await pg.locator(f'#chips .chip[data-tag="{exc}"]').evaluate("e=>getComputedStyle(e).textDecorationLine") == "line-through", tag + "excluida en rojo y tachada")
-    exp = cnt(lambda g: inc in g and exc not in g)
-    ok(await total() == exp, tag + f"Y de incluidas + quitar excluidas ({await total()}={exp})")
-    n_exc = (await pg.locator(f'#chips .chip[data-tag="{exc}"] .n').inner_text())
-    ok(n_exc == "−%d" % cnt(lambda g: inc in g and exc in g), tag + f"la excluida muestra cuántas oculta ({n_exc})")
-    ok(int(await pg.locator(f'#chips .chip[data-tag="{inc}"] .n').inner_text()) == exp, tag + "conteo de la incluida = filas")
-    other = [t for t in ids if t not in (inc, exc)]
-    bad = []
-    for t in other:
-        n = int(await pg.locator(f'#chips .chip[data-tag="{t}"] .n').inner_text())
-        e = cnt(lambda g: inc in g and exc not in g and t in g)
-        z = "zero" in await pg.locator(f'#chips .chip[data-tag="{t}"]').get_attribute("class")
-        if n != e or z != (n == 0): bad.append(f"{t}:{n}/{e}/{z}")
-    ok(not bad, tag + f"conteos y gris respetan con + sin ({len(other)} etiquetas)" + (": " + ", ".join(bad[:4]) if bad else ""))
-    st = " ".join((await pg.locator("#tagSel").inner_text()).split())
-    ok("Con:" in st and "Sin:" in st, tag + "barra resumen «Con: … · Sin: …»: " + st[:80])
-    h = await pg.evaluate("decodeURIComponent(location.hash)")
-    ok(f"con={inc}" in h and f"sin={exc}" in h, tag + "filtros en la URL: " + h)
-    await pg.reload(wait_until="networkidle"); await pg.wait_for_timeout(2500)
-    ok(await state(inc) == "true" and await state(exc) == "mixed" and await total() == exp, tag + "al recargar se recupera el filtro desde la URL")
-    await pg.locator(f'#tagSel [data-untag="{exc}"]').click(); await pg.wait_for_timeout(250)
-    ok(await state(exc) == "false" and await total() == cnt(lambda g: inc in g), tag + "✕ en la barra quita la excluida")
-    await tap(inc); ok(await state(inc) == "mixed" and await total() == cnt(lambda g: inc not in g), tag + "2.º clic en la incluida → excluida")
-    await tap(inc); ok(await state(inc) == "false" and await total() == len(W), tag + "3.º clic → sin filtro")
-    h = await pg.evaluate("decodeURIComponent(location.hash)")
-    ok("con=" not in h and "sin=" not in h, tag + "URL limpia sin filtros")
-    # preset «Quitar ruido»
-    noise = [t for t in ("bot", "sniper", "bundle", "one_hit", "insuficiente", "una_vez") if t in ids]
-    await pg.locator("#noiseBtn").scroll_into_view_if_needed(); await pg.locator("#noiseBtn").click(); await pg.wait_for_timeout(300)
-    xs = await pg.locator("#chips .chip.exc").evaluate_all("els=>els.map(e=>e.dataset.tag)")
-    ok(sorted(xs) == sorted(noise), tag + "«Quitar ruido» excluye: " + ", ".join(xs))
-    expn = cnt(lambda g: not any(t in g for t in noise))
-    ok(await total() == expn and "on" in await pg.locator("#noiseBtn").get_attribute("class"), tag + f"«Quitar ruido» deja {expn} wallets")
-    if shots:
-        await pg.mouse.move(1, 1) if not mobile else None; await pg.evaluate("document.getElementById('toast').classList.add('hide');window.scrollTo(0,0)")
-        await pg.locator("#tagSel").scroll_into_view_if_needed(); await pg.evaluate("window.scrollBy(0,-150)"); await pg.wait_for_timeout(150)
-        await pg.evaluate("document.getElementById('tip').classList.add('hide')")
-        await pg.screenshot(path=f"{SHOTS}/{'mobile' if mobile else 'desktop'}-tags-3estados.png")
-    await pg.locator("#noiseBtn").click(); await pg.wait_for_timeout(300)
-    ok(await pg.locator("#chips .chip.exc").count() == 0 and await total() == len(W), tag + "2.º clic en «Quitar ruido» lo deshace")
-    if mobile:
-        # pulsación larga: muestra la ayuda y NO cambia el filtro
-        t3 = inc
-        el = pg.locator(f'#chips .chip[data-tag="{t3}"]'); await el.scroll_into_view_if_needed(); bb = await el.bounding_box()
-        x, y = bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2
-        cdp = await ctx.new_cdp_session(pg)
-        await cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
-        await pg.wait_for_timeout(900)
-        tipv = await pg.locator("#tip").is_visible(); tipt = await pg.locator("#tip").inner_text()
-        await cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
-        await pg.wait_for_timeout(400)
-        ok(tipv and "Clic" in tipt, tag + "pulsación larga muestra la ayuda: " + tipt[-70:])
-        ok(await state(t3) == "false" and await total() == len(W), tag + "pulsación larga no cambia el filtro")
-        await tap(t3); ok(await state(t3) == "true", tag + "toque normal sí filtra (✓)")
-        await tap(t3); ok(await state(t3) == "mixed", tag + "2.º toque → ✕"); await tap(t3); ok(await state(t3) == "false", tag + "3.º toque → quitar")
-
 async def edge_point(pg, eid):
     """Punto de pantalla en mitad de una línea del grafo (para hacer clic/tocar como una persona)."""
     return await pg.evaluate("""(id) => { const p = document.querySelector('#ckSvg .ed[data-edge="' + id + '"] .eh'); p.scrollIntoView({block: 'center'});
@@ -483,7 +406,6 @@ async def main():
                 ok(rows == exp, tag + f"semántica Y correcta ({rows}={exp})")
             await pg.locator("#clrTags").click(); await pg.wait_for_timeout(300)
             ok(await pg.locator("#chips .chip.sel").count() == 0 and not await pg.locator("#tagSel").is_visible(), tag + "«Quitar filtros de etiquetas» limpia")
-            if D: await tag_tests(pg, ctx, D, tag, mobile)
             if not mobile:
                 # 2) hoja 🌱
                 leaves = await pg.locator("#tbl tbody .leaf").count()
