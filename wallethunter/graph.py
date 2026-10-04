@@ -3,7 +3,7 @@ import hashlib, json, time
 from collections import defaultdict
 from itertools import combinations
 from .config import cfg
-from . import cex
+from . import services, cex
 from .chains import CHAINS
 
 
@@ -31,7 +31,7 @@ def analyze(c, chain, window_days=30, now=None):
     bc, cc, ct = cfg()["bundle"], cfg()["cluster"], cfg()["copy_trader"]
     wallets = {r["address"]: dict(r) for r in c.execute("SELECT * FROM wallets WHERE chain=?", (chain,))}
     sig = defaultdict(lambda: {"bundles": [], "cluster_size": 0, "cluster": None, "insider": False, "sniper": False,
-                               "early_rank_min": None, "copy_of": None, "funder_is_hub": False, "distinct_out": 0, "links": []})
+                               "early_rank_min": None, "copy_of": None, "funder_is_hub": False, "distinct_out": 0, "links": [], "svc": []})
     tokens = {r["address"]: dict(r) for r in c.execute("SELECT * FROM tokens WHERE chain=?", (chain,))}
     is_sol = chain == "solana"
     # ---- bundles, snipers, rank temprano
@@ -70,6 +70,45 @@ def analyze(c, chain, window_days=30, now=None):
                 for w in ws:
                     sig[w]["bundles"].append(bid)
     c.executemany("INSERT OR REPLACE INTO bundles VALUES(?,?,?,?,?,?,?)", bundle_rows)
+    # ---- fondeadores / hubs
+    funded = defaultdict(list)
+    for w, row in wallets.items():
+        if row.get("funder"):
+            funded[row["funder"]].append(w)
+    # servicios compartidos (services.py): lista conocida + hubs autodetectados (caché) + fondeó a muchas wallets de la base.
+    # Compartirlos NO es un vínculo: no se une en clusters; se guarda aparte (sig[w]["svc"]) para mostrarlo etiquetado.
+    hubs = services.cached_hubs(c, chain)
+    svc_min = cc.get("service_min_funded", 25)
+    svc_memo, svc_seen = {}, {}
+
+    def svc(a):
+        if not a:
+            return None
+        if a not in svc_memo:
+            e = services.known(chain, a)
+            if not e and a in hubs:
+                e = services.hub_entry(hubs[a])
+            if not e and len(funded.get(a, ())) >= svc_min and not cex.label(chain, a):
+                why = f"fondeó a {len(funded[a])} wallets de la base"
+                e = services.hub_entry(why)
+                services.cache_put(c, chain, a, True, None, len(funded[a]), None, why)
+            svc_memo[a] = e
+        return svc_memo[a]
+
+    svc_skipped = 0
+
+    def svc_mark(a, ws, how):
+        nonlocal svc_skipped
+        e = svc(a)
+        nm = e["name"] if not e.get("auto") else "servicio/hub"
+        d = svc_seen.setdefault(a, {"address": a, "name": nm, "label": e["display"] if not e.get("auto") else f"{e['icon']} servicio/hub", "icon": e["icon"],
+                                    "auto": bool(e.get("auto")), "verified": bool(e.get("verified")), "why": e.get("why"), "wallets": set()})
+        d["wallets"] |= set(ws)
+        if len(ws) >= 2:
+            svc_skipped += len(ws) * (len(ws) - 1) // 2
+        for w in ws:
+            if len(sig[w]["svc"]) < 6 and not any(x["a"] == a for x in sig[w]["svc"]):
+                sig[w]["svc"].append({"a": a, "n": nm, "i": e["icon"], "k": len(ws), "h": how, "auto": bool(e.get("auto"))})
     # ---- insiders por creador
     creators = {t["creator"]: tok for tok, t in tokens.items() if t.get("creator")}
     creator_funders = {wallets[cr]["funder"] for cr in creators if cr in wallets and wallets[cr].get("funder")}
@@ -77,16 +116,11 @@ def analyze(c, chain, window_days=30, now=None):
         f = row.get("funder")
         if w in creators:
             continue
-        if f and (f in creators or (f in creator_funders and not cex.label(chain, f))):
+        if f and (f in creators or (f in creator_funders and not cex.label(chain, f) and not svc(f))):
             sig[w]["insider"] = True
         for cr in creators:
             if cr in wallets and wallets[cr].get("funder") == w:
                 sig[w]["insider"] = True
-    # ---- fondeadores / hubs
-    funded = defaultdict(list)
-    for w, row in wallets.items():
-        if row.get("funder"):
-            funded[row["funder"]].append(w)
     uf = UF()
     pairs = set()
     def link(a, b, kind):
@@ -100,6 +134,11 @@ def analyze(c, chain, window_days=30, now=None):
             sig[b]["links"].append((a, kind)) if len(sig[b]["links"]) < 30 else None
     for f, ws in funded.items():
         lab = cex.label(chain, f)
+        if not lab and svc(f):
+            for w in ws:
+                sig[w]["funder_is_hub"] = True
+            svc_mark(f, ws, "fondeó")
+            continue
         if not lab and len(ws) >= cc["hub_min_funded"]:
             for w in ws:
                 sig[w]["funder_is_hub"] = True
@@ -122,7 +161,10 @@ def analyze(c, chain, window_days=30, now=None):
     by_grand = defaultdict(set)
     for f, ws in funded.items():
         gf = grand.get(f)
-        if gf and not cex.label(chain, gf):
+        if gf and not cex.label(chain, gf) and svc(gf):
+            svc_mark(gf, ws, "fondeó (2 saltos)")
+            continue
+        if gf and not cex.label(chain, gf) and not svc(f):
             for w in ws:
                 by_grand[gf].add(w)
             if gf in wallets:
@@ -150,6 +192,8 @@ def analyze(c, chain, window_days=30, now=None):
         if not cp:
             continue
         if cp in wallets and (r["asset"] != "native" or (r["amount_native"] or 0) >= cc["min_transfer_native"]):
+            if svc(cp) or svc(w):
+                continue
             link(w, cp, "transferencia")
         if r["direction"] == "out" and r["asset"] == "native" and (r["amount_native"] or 0) >= cc["min_transfer_native"] and not cex.label(chain, cp):
             outs[w].add(cp)
@@ -222,4 +266,7 @@ def analyze(c, chain, window_days=30, now=None):
         if len(best[1]) >= ct["min_tokens"]:
             sig[fw]["copy_of"] = best[0]
     c.commit()
+    svc_list = sorted(({**d, "wallets": len(d["wallets"])} for d in svc_seen.values()), key=lambda d: -d["wallets"])
+    clusters_meta = {"svc_skipped": svc_skipped, "services": svc_list[:40]}
+    analyze.last_meta = clusters_meta
     return sig, clusters, len(pairs), bundle_rows

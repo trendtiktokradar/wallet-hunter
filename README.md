@@ -82,6 +82,21 @@ Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbral
   - Axiom (formato corroborado por guías y herramientas de terceros, no por docs oficiales): `[{"trackedWalletAddress","name","emoji","alertsOn"}]`, Wallet Tracker → Import.
   - CSV `address,name` y JSON simple.
 
+## 🪙 Pestaña Tokens: análisis por coin
+- **Buscador de CA arriba** (acepta el CA suelto o un link de pump.fun, GMGN, Birdeye, explorador…). Si la coin ya está
+  escaneada abre su análisis; si no, ofrece **escanearla con el PIN** (entra en la cola del box), enseña el progreso del
+  trabajo y **abre la coin sola al terminar** (aunque recargues la página).
+- **Lista de coins escaneadas**: símbolo, chain, MC, fecha de escaneo, wallets, bundles y clusters. Pulsa una fila para abrir.
+- **Análisis de la coin** (dentro de Tokens, `#tokens/coin=<CA>`): cabecera de la coin con «← Volver a tokens» y
+  sub-pestañas **👛 Wallets** (la misma tabla del ranking con todos los filtros, etiquetas de 3 estados, Quitar ruido,
+  exportar y borrar, solo con las wallets de esa coin), **📦 Bundles**, **🕸 Clusters / conexiones** (con botón para
+  comprobar las conexiones del top 10 por score) y **🧠 Smart cruzado** (si hay wallets de esa coin en el cruce).
+  El enlace guarda la sub-pestaña y las etiquetas (`&sub=bundles&con=…&sin=…`), así que se puede recargar o compartir.
+- **Wallets** sigue siendo el ranking global; su selector de coin filtra el ranking y la cabecera trae
+  «📊 Análisis completo en Tokens» y «✕ Cerrar vista de coin · ver ranking general».
+- Es el mismo código: la vista usa la coin de la pestaña activa (`coinTok()`), así que tabla, filtros, tarjetas,
+  bundles, clusters y smart cruzado no se duplican.
+
 ## Borrar wallets y coins
 - **🗑** en cada fila y en el detalle de la wallet; **«🗑 Borrar seleccionadas»** en la barra de selección (casillas).
 - **«🗑 Borrar coin»** en cada token de la pestaña Tokens y en la cabecera de la coin: borra el token con sus wallets, trades,
@@ -120,6 +135,40 @@ Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbral
   y nunca es «madre»). Coste típico en Solana: ~100 créditos Helius por wallet (3 wallets ≈ 310).
 - Etiquetas de entidades: hoy la lista de exchanges de `cex.py`. Hay un enchufe `ArkhamLabels` (desactivado) para añadir
   Arkham si hay `ARKHAM_API_KEY`: basta con implementar `_fetch` y ponerlo en `implemented = True`.
+
+## 🔁 Servicios compartidos (puentes, bots, apps, fee payers)
+Que dos wallets usen el mismo servicio (el solver de Relay les mandó SOL, las dos pagaron comisión al fee wallet de Axiom…)
+**no es un vínculo real**: miles de usuarios comparten esas direcciones. Por eso:
+- **Lista conocida** (`wallethunter/services.py`): cada dirección lleva nombre, tipo, icono, `verified` y la **fuente**.
+  - **Verificadas** (copiadas de documentación oficial o repos públicos): Relay (docs.relay.link), deBridge/DLN (docs + dln-contracts),
+    Mayan (docs), Wormhole (docs), Across (repo across-protocol/contracts), LayerZero EndpointV2 (etiqueta de Etherscan + docs),
+    Stargate V2 (docs), Allbridge Core (docs), propinas de Jito (docs), comisiones de pump.fun (repo pump-public-docs),
+    fee wallets de Axiom, GMGN, Photon, BullX, Fomo, Phantom, Moonshot, Jupiter, Maestro y Banana Gun (DefiLlama dimension-adapters),
+    y los fee receivers de Trojan, BonkBot, Padre, Bloom, Nova, MEVX, Unibot, Banana Gun, Maestro y unos 20 bots más (Dune spellbook).
+  - **Supuestas** (`verified: False`, conocimiento previo sin fuente confirmada): Jupiter v6 (programa), Moonshot (programa),
+    endpoint de LayerZero en Solana, autoridad AMM de Raydium.
+  - **No encontradas**: Privy y otros wallets embebidos no tienen un fee payer/relayer público único (cada app pone el suyo);
+    el fee payer de Fomo tampoco está publicado → se cubren con la autodetección.
+  - Añadidos a mano: `state/services_extra.json` → `{"solana": {"<dirección>": "Nombre"}, "evm": {...}}`.
+- **Autodetección «servicio/hub»** (aunque no esté en la lista). Se marca si cumple una de estas condiciones:
+  - ≥ `hub_min_txs` (1000) transacciones en ≤ 7 días;
+  - ≥ `service_min_counterparties` (150) contrapartes distintas en sus últimas transferencias;
+  - fondeó a ≥ `hub_min_funded_db` (25) wallets de la base.
+
+  Para ahorrar créditos:
+  - las contrapartes solo se muestrean si la wallet tiene ≥ `service_probe_min_txs` (300) tx (Solana: ≤ 3 páginas × 10 créditos, se para antes si ya está claro; en EVM sale gratis del historial);
+  - los servicios conocidos no se consultan nunca;
+  - el resultado se guarda en la tabla `svc_cache` (positivos 30 días, negativos 7).
+
+  Todo es configurable en `config.json → connect`.
+- **Conexiones**:
+  - los servicios salen como **nodos grises** con nombre e icono (🔁 Relay, 🤖 Axiom, 📱 Fomo, 🕸️ servicio/hub) y sus líneas son **punteadas grises** («Vía un servicio compartido (no cuenta)» en la leyenda);
+  - el motivo dice «posible conexión solo porque ambas usan Relay» y pesa `service_weight` (2/100), sin acumularse;
+  - el interruptor **«Ocultar conexiones por servicios»** las quita del grafo, de las pruebas y de los motivos (se recuerda en el navegador).
+- **Escaneos/clusters**:
+  - un fondeador que es un servicio (o un hub) **no une wallets** en clusters, ni directamente ni a 2 saltos;
+  - se guarda aparte: el detalle de la wallet muestra «Servicios compartidos», y Conexiones → Clusters muestra cuántos vínculos se ignoraron y qué servicios (mismo interruptor).
+- La vigilancia de fondeadores tampoco vigila servicios.
 
 ## 🧠 Smart money cruzado (pestaña «🧠 Smart cruzado»)
 Wallets que fueron **compradoras tempranas** (top 50 de compradores, `smartx.early_rank`) **y rentables** (PnL > 0 en esa coin,

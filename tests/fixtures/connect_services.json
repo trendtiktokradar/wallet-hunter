@@ -1,0 +1,712 @@
+{
+ "version": 1,
+ "chain": "solana",
+ "created": 1791113848,
+ "wallets": [
+  "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+  "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+  "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+  "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1"
+ ],
+ "nodes": [
+  {
+   "id": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "kind": "input",
+   "i": 1,
+   "label": "W1",
+   "madre": false,
+   "role": null
+  },
+  {
+   "id": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "kind": "input",
+   "i": 2,
+   "label": "W2",
+   "madre": false,
+   "role": null
+  },
+  {
+   "id": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "kind": "input",
+   "i": 3,
+   "label": "W3",
+   "madre": false,
+   "role": null
+  },
+  {
+   "id": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "kind": "input",
+   "i": 4,
+   "label": "W4",
+   "madre": false,
+   "role": null
+  },
+  {
+   "id": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+   "kind": "service",
+   "label": "🤖 Axiom",
+   "svc": "Axiom",
+   "icon": "🤖",
+   "verified": true,
+   "source": "DefiLlama dimension-adapters fees/axiom.ts · fee wallets",
+   "auto": false,
+   "why": null,
+   "madre": false,
+   "hub": true,
+   "role": "recibió fondos de W2, W3, W4"
+  },
+  {
+   "id": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+   "kind": "service",
+   "label": "🔁 Relay",
+   "svc": "Relay",
+   "icon": "🔁",
+   "verified": true,
+   "source": "docs.relay.link (contract addresses) · solver Solana",
+   "auto": false,
+   "why": null,
+   "madre": false,
+   "hub": true,
+   "role": "envió fondos a W1, W2"
+  },
+  {
+   "id": "Lowfrnd111111111111111111111111111111111111",
+   "kind": "bridge",
+   "label": "Lowf…1111",
+   "madre": true,
+   "hub": false,
+   "role": "envió fondos a W2, W4"
+  },
+  {
+   "id": "Tinyy11111111111111111111111111111111111111",
+   "kind": "bridge",
+   "label": "Tiny…1111",
+   "madre": true,
+   "hub": false,
+   "role": "envió fondos a W1, W3"
+  },
+  {
+   "id": "Unkhub1111111111111111111111111111111111111",
+   "kind": "service",
+   "label": "🕸️ servicio/hub",
+   "svc": "servicio/hub",
+   "icon": "🕸️",
+   "verified": false,
+   "source": "autodetección",
+   "auto": true,
+   "why": "movió fondos con 320+ wallets distintas",
+   "madre": false,
+   "hub": true,
+   "role": "envió fondos a W1, W4"
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "a": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "b": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "type": "transfer",
+   "label": "transferencia directa",
+   "ev": [
+    {
+     "ts": 1790252848,
+     "tx": "rs",
+     "amt": 2.0,
+     "asset": "SOL",
+     "note": "W3 → W4"
+    }
+   ],
+   "n": 1
+  },
+  {
+   "id": "e2",
+   "a": "Tinyy11111111111111111111111111111111111111",
+   "b": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790256848,
+     "tx": "tp",
+     "amt": 0.2,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1
+  },
+  {
+   "id": "e3",
+   "a": "Tinyy11111111111111111111111111111111111111",
+   "b": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790256948,
+     "tx": "tr",
+     "amt": 0.2,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1
+  },
+  {
+   "id": "e4",
+   "a": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+   "b": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "type": "first",
+   "label": "primer fondeo",
+   "ev": [
+    {
+     "ts": 1790249848,
+     "tx": "rp",
+     "amt": 1.0,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "Relay"
+  },
+  {
+   "id": "e5",
+   "a": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+   "b": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "type": "first",
+   "label": "primer fondeo",
+   "ev": [
+    {
+     "ts": 1790249898,
+     "tx": "rq",
+     "amt": 1.2,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "Relay"
+  },
+  {
+   "id": "e6",
+   "a": "Unkhub1111111111111111111111111111111111111",
+   "b": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790254848,
+     "tx": "up",
+     "amt": 0.5,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "servicio/hub"
+  },
+  {
+   "id": "e7",
+   "a": "Unkhub1111111111111111111111111111111111111",
+   "b": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790254948,
+     "tx": "us",
+     "amt": 0.5,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "servicio/hub"
+  },
+  {
+   "id": "e8",
+   "a": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "b": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790250748,
+     "tx": "qa",
+     "amt": 0.05,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "Axiom"
+  },
+  {
+   "id": "e9",
+   "a": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "b": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790250838,
+     "tx": "ra",
+     "amt": 0.05,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "Axiom"
+  },
+  {
+   "id": "e10",
+   "a": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "b": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790251048,
+     "tx": "sa",
+     "amt": 0.05,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1,
+   "svc": "Axiom"
+  },
+  {
+   "id": "e11",
+   "a": "Lowfrnd111111111111111111111111111111111111",
+   "b": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790255848,
+     "tx": "lq",
+     "amt": 0.3,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1
+  },
+  {
+   "id": "e12",
+   "a": "Lowfrnd111111111111111111111111111111111111",
+   "b": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "type": "fund",
+   "label": "envió fondos",
+   "ev": [
+    {
+     "ts": 1790255948,
+     "tx": "ls",
+     "amt": 0.3,
+     "asset": "SOL"
+    }
+   ],
+   "n": 1
+  }
+ ],
+ "pairs": [
+  {
+   "a": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "b": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "score": 71,
+   "level": "Conexión fuerte",
+   "reason": "Conexión fuerte: 1 transferencia directa: el 24/09/2026 W3 envió 2,00 SOL a W4. (Además ambas usan Axiom: no cuenta.)",
+   "ev": [
+    {
+     "type": "transfer",
+     "w": 70,
+     "text": "1 transferencia directa: el 24/09/2026 W3 envió 2,00 SOL a W4",
+     "edges": [
+      "e1"
+     ]
+    },
+    {
+     "type": "service",
+     "w": 2,
+     "svc": "Axiom",
+     "icon": "🤖",
+     "node": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+     "edges": [
+      "e10",
+      "e9"
+     ],
+     "text": "posible conexión solo porque ambas usan Axiom (las dos enviaron SOL a Axiom; no cuenta como vínculo real)"
+    }
+   ],
+   "svc_only": false,
+   "services": [
+    "Axiom"
+   ]
+  },
+  {
+   "a": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "b": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "score": 36,
+   "level": "Conexión posible",
+   "reason": "Conexión posible: las dos recibieron SOL de Lowf…1111. (Además ambas usan Axiom: no cuenta.)",
+   "ev": [
+    {
+     "type": "bridge",
+     "w": 35,
+     "text": "las dos recibieron SOL de Lowf…1111",
+     "edges": [
+      "e11",
+      "e12"
+     ],
+     "node": "Lowfrnd111111111111111111111111111111111111"
+    },
+    {
+     "type": "service",
+     "w": 2,
+     "svc": "Axiom",
+     "icon": "🤖",
+     "node": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+     "edges": [
+      "e10",
+      "e8"
+     ],
+     "text": "posible conexión solo porque ambas usan Axiom (las dos enviaron SOL a Axiom; no cuenta como vínculo real)"
+    }
+   ],
+   "svc_only": false,
+   "services": [
+    "Axiom"
+   ]
+  },
+  {
+   "a": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "b": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "score": 35,
+   "level": "Conexión posible",
+   "reason": "Conexión posible: las dos recibieron SOL de Tiny…1111.",
+   "ev": [
+    {
+     "type": "bridge",
+     "w": 35,
+     "text": "las dos recibieron SOL de Tiny…1111",
+     "edges": [
+      "e2",
+      "e3"
+     ],
+     "node": "Tinyy11111111111111111111111111111111111111"
+    }
+   ],
+   "svc_only": false,
+   "services": []
+  },
+  {
+   "a": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "b": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "score": 2,
+   "level": "Indicios débiles",
+   "reason": "Indicios débiles: posible conexión solo porque ambas usan Relay (servicio compartido: no es un vínculo real).",
+   "ev": [
+    {
+     "type": "service",
+     "w": 2,
+     "svc": "Relay",
+     "icon": "🔁",
+     "node": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+     "edges": [
+      "e4",
+      "e5"
+     ],
+     "text": "posible conexión solo porque ambas usan Relay (mismo fondeador: Relay hizo el primer fondeo de las dos; no cuenta como vínculo real)"
+    }
+   ],
+   "svc_only": true,
+   "services": [
+    "Relay"
+   ]
+  },
+  {
+   "a": "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+   "b": "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1",
+   "score": 2,
+   "level": "Indicios débiles",
+   "reason": "Indicios débiles: posible conexión solo porque ambas usan un servicio/hub (servicio compartido: no es un vínculo real).",
+   "ev": [
+    {
+     "type": "service",
+     "w": 2,
+     "svc": "servicio/hub",
+     "icon": "🕸️",
+     "node": "Unkhub1111111111111111111111111111111111111",
+     "edges": [
+      "e6",
+      "e7"
+     ],
+     "text": "posible conexión solo porque ambas usan un servicio/hub (Unkh…1111) (las dos recibieron SOL de servicio/hub Unkh…1111; no cuenta como vínculo real)"
+    }
+   ],
+   "svc_only": true,
+   "services": [
+    "un servicio/hub"
+   ]
+  },
+  {
+   "a": "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+   "b": "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+   "score": 2,
+   "level": "Indicios débiles",
+   "reason": "Indicios débiles: posible conexión solo porque ambas usan Axiom (servicio compartido: no es un vínculo real).",
+   "ev": [
+    {
+     "type": "service",
+     "w": 2,
+     "svc": "Axiom",
+     "icon": "🤖",
+     "node": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+     "edges": [
+      "e8",
+      "e9"
+     ],
+     "text": "posible conexión solo porque ambas usan Axiom (las dos enviaron SOL a Axiom; no cuenta como vínculo real)"
+    }
+   ],
+   "svc_only": true,
+   "services": [
+    "Axiom"
+   ]
+  }
+ ],
+ "bridges": [
+  {
+   "address": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+   "connects": [
+    "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+    "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+    "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1"
+   ],
+   "madre": false,
+   "hub": true,
+   "role": "recibió fondos de W2, W3, W4",
+   "txs": null,
+   "txs_more": null,
+   "span_h": null,
+   "label": "🤖 Axiom",
+   "service": {
+    "name": "Axiom",
+    "kind": "bot",
+    "verified": true,
+    "source": "DefiLlama dimension-adapters fees/axiom.ts · fee wallets",
+    "icon": "🤖",
+    "kind_desc": "bot / terminal de trading",
+    "auto": false,
+    "display": "🤖 Axiom"
+   }
+  },
+  {
+   "address": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+   "connects": [
+    "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+    "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL"
+   ],
+   "madre": false,
+   "hub": true,
+   "role": "envió fondos a W1, W2",
+   "txs": null,
+   "txs_more": null,
+   "span_h": null,
+   "label": "🔁 Relay",
+   "service": {
+    "name": "Relay",
+    "kind": "bridge",
+    "verified": true,
+    "source": "docs.relay.link (contract addresses) · solver Solana",
+    "icon": "🔁",
+    "kind_desc": "puente / relayer entre chains",
+    "auto": false,
+    "display": "🔁 Relay"
+   }
+  },
+  {
+   "address": "Lowfrnd111111111111111111111111111111111111",
+   "connects": [
+    "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+    "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1"
+   ],
+   "madre": true,
+   "hub": false,
+   "role": "envió fondos a W2, W4",
+   "txs": 500,
+   "txs_more": false,
+   "span_h": 4000.0,
+   "label": null,
+   "service": null
+  },
+  {
+   "address": "Tinyy11111111111111111111111111111111111111",
+   "connects": [
+    "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+    "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r"
+   ],
+   "madre": true,
+   "hub": false,
+   "role": "envió fondos a W1, W3",
+   "txs": 20,
+   "txs_more": false,
+   "span_h": 900.0,
+   "label": null,
+   "service": null
+  },
+  {
+   "address": "Unkhub1111111111111111111111111111111111111",
+   "connects": [
+    "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+    "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1"
+   ],
+   "madre": false,
+   "hub": true,
+   "role": "envió fondos a W1, W4",
+   "txs": 400,
+   "txs_more": false,
+   "span_h": 3000.0,
+   "label": "🕸️ servicio/hub",
+   "service": {
+    "name": "servicio/hub",
+    "kind": "hub",
+    "verified": false,
+    "source": "autodetección",
+    "why": "movió fondos con 320+ wallets distintas",
+    "icon": "🕸️",
+    "kind_desc": "servicio/hub (detectado por actividad)",
+    "auto": true,
+    "display": "🕸️ servicio/hub"
+   }
+  }
+ ],
+ "madre_inputs": {},
+ "info": {
+  "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki": {
+   "i": 1,
+   "n": 3,
+   "truncated": false,
+   "oldest": 1790249848,
+   "newest": 1790256848,
+   "error": null,
+   "db": false,
+   "funder": {
+    "address": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+    "amount": 1.0,
+    "ts": 1790163448,
+    "tx": "rp"
+   },
+   "funder_label": "🔁 Relay",
+   "funder_service": true,
+   "buys": 0,
+   "transfers": 3
+  },
+  "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL": {
+   "i": 2,
+   "n": 3,
+   "truncated": false,
+   "oldest": 1790249898,
+   "newest": 1790255848,
+   "error": null,
+   "db": false,
+   "funder": {
+    "address": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+    "amount": 1.2,
+    "ts": 1790163448,
+    "tx": "rq"
+   },
+   "funder_label": "🔁 Relay",
+   "funder_service": true,
+   "buys": 0,
+   "transfers": 3
+  },
+  "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r": {
+   "i": 3,
+   "n": 3,
+   "truncated": false,
+   "oldest": 1790250838,
+   "newest": 1790256948,
+   "error": null,
+   "db": false,
+   "funder": null,
+   "funder_label": null,
+   "funder_service": false,
+   "buys": 0,
+   "transfers": 3
+  },
+  "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1": {
+   "i": 4,
+   "n": 4,
+   "truncated": false,
+   "oldest": 1790251048,
+   "newest": 1790255948,
+   "error": null,
+   "db": false,
+   "funder": null,
+   "funder_label": null,
+   "funder_service": false,
+   "buys": 0,
+   "transfers": 4
+  }
+ },
+ "notes": [
+  "Transferencias directas: cada par se comprobó en todo su historial (6 consultas a Helius getTransfersByAddress).",
+  "Servicios compartidos (no cuentan como vínculo): 🤖 Axiom 7LCZ…1Qjj (verificado); 🔁 Relay F7p3…gmNe (verificado); 🕸️ servicio/hub Unkh…1111 (autodetectado: movió fondos con 320+ wallets distintas).",
+  "Autodetección de servicios: se muestrearon las contrapartes de 2 puente(s) (≤ 3 × 10 créditos c/u)."
+ ],
+ "summary": "3 de 6 pares conectados (score ≥ 25); el más fuerte: W3–W4 con 71/100; 2 posibles wallets madre",
+ "services": [
+  {
+   "address": "7LCZckF6XXGQ1hDY6HFXBKWAtiUgL9QY5vj1C4Bn1Qjj",
+   "name": "Axiom",
+   "label": "🤖 Axiom",
+   "icon": "🤖",
+   "verified": true,
+   "source": "DefiLlama dimension-adapters fees/axiom.ts · fee wallets",
+   "auto": false,
+   "why": null,
+   "connects": [
+    "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL",
+    "RRRRXF69bNHPp5LUMm1pUaCZvCCbQXp4ZSAynrVViF2r",
+    "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1"
+   ]
+  },
+  {
+   "address": "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe",
+   "name": "Relay",
+   "label": "🔁 Relay",
+   "icon": "🔁",
+   "verified": true,
+   "source": "docs.relay.link (contract addresses) · solver Solana",
+   "auto": false,
+   "why": null,
+   "connects": [
+    "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+    "QQQQhCbbzwWsFkeLSTKkfrxVrnCPFhBdMq6i1evQcuiL"
+   ]
+  },
+  {
+   "address": "Unkhub1111111111111111111111111111111111111",
+   "name": "servicio/hub",
+   "label": "🕸️ servicio/hub",
+   "icon": "🕸️",
+   "verified": false,
+   "source": "autodetección",
+   "auto": true,
+   "why": "movió fondos con 320+ wallets distintas",
+   "connects": [
+    "PPPPkWziSE1VPGUSLDqD1oCam1cogQVwFU4GpVDDYyki",
+    "SSSSwdrRevvKmfWpUCfDpd97J4BJkceVGWcthHVL8E1"
+   ]
+  }
+ ],
+ "credits": 220,
+ "unit": "créditos (prueba)",
+ "labels": [
+  "lista de exchanges"
+ ],
+ "seconds": 0.0,
+ "limits": {
+  "max_txs_per_wallet": 1000,
+  "first_txs": 25,
+  "max_counterparties": 5,
+  "max_hop_lookups": 30,
+  "max_bridges_checked": 10,
+  "cobuy_window_s": 600
+ },
+ "id": "svc1"
+}

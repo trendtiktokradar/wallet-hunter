@@ -53,6 +53,10 @@ def sender_label(c, chain, s):
     lab = cex.label(chain, s)
     if lab:
         return f"CEX {lab}"
+    from . import services
+    sv = services.label(c, chain, s)
+    if sv:
+        return ("servicio " + sv["name"]) if not sv.get("auto") else "servicio/hub"
     n = c.execute("SELECT COUNT(*) FROM wallets WHERE chain=? AND funder=?", (chain, s)).fetchone()[0]
     if n >= 2:
         return f"fondeador de {n} wallets"
@@ -251,9 +255,14 @@ def funder_list(c):
         if lab:
             f["watch"], f["why"], f["label"] = False, "exchange", "CEX " + lab
     from .connect import INFRA
+    from . import services
     for f in out.values():
         if f["address"] in INFRA["solana" if f["chain"] == "solana" else "evm"]:
             f["watch"], f["why"] = False, "infraestructura"
+        elif f["watch"]:
+            sv = services.label(c, f["chain"], f["address"])
+            if sv:     # servicio compartido (Relay, Axiom, bot…): fondea a miles de wallets, no se vigila
+                f["watch"], f["why"], f["label"] = False, "servicio", sv["display"] if not sv.get("auto") else "servicio/hub"
     lst = sorted(out.values(), key=lambda f: (not f["watch"], -len(f["children"])))
     a = settings()
     for i, f in enumerate([x for x in lst if x["watch"]]):
@@ -303,9 +312,10 @@ def poll_funders(c, providers, now):
         thr = a["funder_min_native"].get(chain, 0.05)
         from .connect import INFRA
         infra = INFRA["solana" if chain == "solana" else "evm"]
+        from . import services
         n_alerts, extra = 0, 0
         for to, amt, ts, sig in sorted(rows, key=lambda x: x[2]):
-            if amt < thr or to == addr or to in infra or cex.label(chain, to) or (chain, to) in favset:
+            if amt < thr or to == addr or to in infra or cex.label(chain, to) or (chain, to) in favset or services.known(chain, to):
                 continue
             if c.execute("SELECT 1 FROM alerts WHERE tx=?", ("funder:" + str(sig),)).fetchone():
                 continue

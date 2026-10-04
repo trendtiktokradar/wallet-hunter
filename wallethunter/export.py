@@ -2,7 +2,7 @@
 import json, os, time
 from .config import DATA_JSON, cfg
 from .chains import CHAINS
-from . import db, market, smartx
+from . import db, market, smartx, services
 from .net import STATUS
 from .tags import tag_defs
 
@@ -36,7 +36,7 @@ def build(c=None):
             "bal": _r(r["balance_native"], 3), "ft": r["first_tx_ts"], "at": r["age_truncated"], "la": r["last_activity"],
             "cl": r["cluster_id"], "bu": m.get("bundles") or [], "tg": json.loads(r["tags"]) if r["tags"] else [],
             "fu": r["funder"], "fl": r["funder_label"], "or": json.loads(r["origins"]) if r["origins"] else [],
-            "cp": m.get("copy_of"), "lk": m.get("links") or [], "er": m.get("early_rank_min"), "pf": r["prefiltered"],
+            "cp": m.get("copy_of"), "lk": m.get("links") or [], "sv": m.get("svc") or [], "er": m.get("early_rank_min"), "pf": r["prefiltered"],
             "ht": r["history_truncated"], "ls": r["last_scanned"],
             "ct": sorted(coins.get((r["chain"], r["address"]), set()) | set(json.loads(r["origins"]) if r["origins"] else [])), "fa": r["funded_at"], "lf": lastfund.get((r["chain"], r["address"])), "lx": lasttrade.get((r["chain"], r["address"])),
         })
@@ -50,13 +50,15 @@ def build(c=None):
     bundles = []
     for i, r in enumerate(c.execute("SELECT * FROM bundles ORDER BY ts DESC"), 1):
         bundles.append({"id": r["id"], "c": r["chain"], "t": r["token"], "s": r["slot"], "ts": r["ts"], "w": json.loads(r["wallets"]), "n": _r(r["native_total"], 3)})
-    clusters, links = [], 0
+    clusters, links, svc_skipped, svc_hubs = [], 0, 0, []
     for ch in CHAINS:
         g = db.kv_get(c, f"graph:{ch}")
         if g:
             for cl in g["clusters"]:
                 clusters.append({"id": cl["id"], "c": ch, "w": cl["wallets"], "n": cl["size"]})
             links += g.get("links", 0)
+            svc_skipped += g.get("svc_skipped", 0)
+            svc_hubs += [dict(x, c=ch) for x in g.get("services") or []]
     # cruce de coins: wallets que entraron temprano (top 50) en 2+ tokens escaneados
     cross = []
     for r in c.execute("""SELECT chain, wallet, COUNT(*) n, GROUP_CONCAT(token) toks, AVG(rank) ar FROM token_buyers
@@ -88,7 +90,8 @@ def build(c=None):
             "bundles": bundles, "clusters": clusters, "cross": cross, "smartx": sx, "smartx_cfg": {k: smartx.conf()[k] for k in ("early_rank", "min_coins")}, "jobs": jobs, "sources": srcs, "prices": prices,
             "tags": tag_defs(), "chains": {k: {"name": v["name"], "native": v["native"], "explorer": v["explorer"], "exn": v.get("explorer_name"), "gmgn": v.get("gmgn"), "tx": v["tx"]} for k, v in CHAINS.items()},
             "box": {"url": box.get("url"), "updated": box.get("updated"), "pin_set": box.get("pin_set", False)},
-            "keys": key_status()}
+            "keys": key_status(),
+            "svc": {"skipped": svc_skipped, "hubs": svc_hubs[:60], "known": {f: {k: v for k, v in d.items() if k != "names"} for f, d in services.stats().items()}}}
 
 
 def key_status():

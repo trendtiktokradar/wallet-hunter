@@ -307,10 +307,13 @@ class Scanner:
             m["bundles"] = g.get("bundles", [])
             m["copy_of"] = g.get("copy_of")
             m["links"] = g.get("links", [])[:10]
+            m["svc"] = g.get("svc", [])[:6]
             m["early_rank_min"] = g.get("early_rank_min")
             self.c.execute("UPDATE wallets SET metrics=?, tags=?, score=?, cluster_id=? WHERE chain=? AND address=?",
                            (json.dumps(m), json.dumps(tags), sc, g.get("cluster"), chain, w["address"]))
-        db.kv_set(self.c, f"graph:{chain}", {"clusters": clusters, "links": n_links, "bundles": len(bundles), "updated": int(time.time())})
+        meta = getattr(graph.analyze, "last_meta", None) or {}
+        db.kv_set(self.c, f"graph:{chain}", {"clusters": clusters, "links": n_links, "bundles": len(bundles), "updated": int(time.time()),
+                                             "svc_skipped": meta.get("svc_skipped", 0), "services": meta.get("services", [])})
         self.c.commit()
 
 

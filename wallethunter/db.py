@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS blocklist(chain TEXT, address TEXT, token TEXT, added
 -- comprobaciones de «Conexiones entre wallets» (privadas: las sirve el box con PIN; el id es el del trabajo)
 CREATE TABLE IF NOT EXISTS checks(id TEXT PRIMARY KEY, created INTEGER, chain TEXT, wallets TEXT, status TEXT, result TEXT, credits INTEGER, summary TEXT, max_score INTEGER, error TEXT);
 CREATE TABLE IF NOT EXISTS aliases(chain TEXT, address TEXT, alias TEXT, updated INTEGER, PRIMARY KEY(chain, address));
+CREATE TABLE IF NOT EXISTS svc_cache(chain TEXT, address TEXT, hub INTEGER, n INTEGER, distinct_cp INTEGER, span_h REAL, why TEXT, ts INTEGER, PRIMARY KEY(chain, address));
 """
 
 _local = threading.local()

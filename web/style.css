@@ -267,3 +267,43 @@ button.noise.on{border-color:#f87171;background:#3b1220;color:#fecdd3}
 .favx .chk input{margin-top:3px}
 #alList{overflow-wrap:anywhere;line-height:1.7}
 @media (max-width:700px){.favx .list.fw{font-size:11px}.favx .list.fw td{padding:5px 4px}}
+
+/* servicios compartidos (Relay, Axiom, bots, fee payers…) */
+#ckSvg .k-service circle{fill:#4b5563;stroke:#9ca3af;stroke-dasharray:2 2}
+#ckSvg .k-service .nl{fill:#9ca3af;font-family:inherit;font-style:italic}
+#ckSvg .ed.svc .ev{opacity:.85}
+.lg.sv{background:#4b5563;border-color:#9ca3af;border-style:dashed!important}
+.cklegend i.lsv{height:0;background:none!important;border-top:3px dotted #9ca3af;width:20px}
+.svctag{display:inline-block;color:#d1d5db;background:#374151;border:1px dashed #9ca3af;border-radius:6px;padding:0 5px;font-size:11px;white-space:nowrap;cursor:help}
+.ckbr.s{opacity:.9;border-style:dashed;border-color:#4b5563;background:#111827}
+.evrow.evsvc{opacity:.75}.evrow.evsvc .wt{color:#9ca3af}
+tr.svcrow td{color:#9ca3af}
+.ckopts{margin:8px 0 4px;gap:10px}
+.svcbox{margin:6px 0;padding:6px 8px;border:1px dashed #4b5563;border-radius:8px;background:#111827;color:#d1d5db}
+.svclist{margin-top:6px;max-height:260px;overflow:auto}
+/* ---- Tokens: buscador, lista y análisis por coin */
+.toksearch .row{flex-wrap:nowrap}
+.toksearch input{flex:1;min-width:0;font-size:15px;padding:10px 12px}
+.toklist tr.tokrow{cursor:pointer}
+.toklist tr.tokrow:hover td{background:#13203a}
+.toklist td.nowrap{white-space:nowrap}
+button.sm{padding:5px 10px;font-size:12.5px}
+.tokpend .ca{margin:2px 0 10px;word-break:break-all}
+.tokprog{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.pbar{height:8px;border-radius:5px;background:var(--bg2);border:1px solid var(--line2);overflow:hidden;margin:8px 0}
+.pbar i{display:block;height:100%;background:linear-gradient(90deg,#0ea5e9,#8b5cf6);transition:width .6s}
+.coinhead .cvbar{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding-bottom:10px;border-bottom:1px solid #1e3a5f}
+.coinhead .cvbar .back{font-weight:600;border-color:#0ea5e9;color:#e0f2fe}
+.tokseg{flex-wrap:wrap}
+.tokseg button .n{font-size:11px;color:var(--mut);margin-left:2px}
+.tokseg button.on .n{color:#bae6fd}
+.coinhead button.closecoin{border-color:#0ea5e9;color:#e0f2fe}
+@media (max-width:760px){
+  .coinhead .cvbar{gap:6px}
+  .coinhead .cvbar .back{width:100%}
+  .tokseg{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .tokseg button{white-space:nowrap;padding:8px 6px;font-size:12.5px;border-bottom:1px solid var(--line2)}
+  .toksearch .row{flex-wrap:wrap}
+  .toksearch input{flex-basis:100%}
+  .toksearch button{width:100%}
+}

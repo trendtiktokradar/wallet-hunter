@@ -4,7 +4,7 @@
   window.WH_BUILD = "__V__";   // la versión desplegada (la pone el workflow de Pages)
   var CFG = window.WH_CONFIG;
   var D = null, BOX = null, BOX_OK = false;
-  var S = { coin: "", pendingCoin: null, sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], xtags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
+  var S = { coin: "", pendingCoin: null, tcoin: "", tpending: null, tsub: "wallets", tscan: null, sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], xtags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
   var FAVS = load("wh_favs", {});            // "chain:addr" -> {alias}
   var ALIASES = load("wh_aliases", {});      // "chain:addr" -> alias (privados: viven en el box, con PIN; aquí solo una copia local)
   var FRESH_DAYS = 7;
@@ -154,11 +154,15 @@
     h.push('<span class="src" title="' + esc(BOX ? "Box: " + (BOX_OK ? "encendido (escaneos desde la web disponibles)" : "no responde") : "Box sin túnel publicado") + '"><span class="dot ' + (BOX_OK ? "ok" : "bad") + '"></span>box</span>');
     $("sources").innerHTML = h.join("");
   }
-  // ---- vista por coin: S.coin = "chain:CA"
-  function coinTok() { if (!S.coin || !D) return null; var i = S.coin.indexOf(":"), c = S.coin.slice(0, i), a = S.coin.slice(i + 1); return D.tokens.find(function (t) { return t.c === c && t.a === a; }) || null; }
+  // ---- vista por coin: S.coin = "chain:CA" (pestaña Wallets) · S.tcoin = "chain:CA" (análisis por coin dentro de Tokens)
+  // Toda la lógica (tabla, filtros, etiquetas, tarjetas, bundles, clusters, smart cruzado) lee coinTok(), así que se reutiliza tal cual.
+  function coinKey() { return S.tab === "tokens" ? S.tcoin : S.coin; }
+  function tokView() { return S.tab === "tokens" && !!coinTok(); }
+  function coinTok() { var k = coinKey(); if (!k || !D) return null; var i = k.indexOf(":"), c = k.slice(0, i), a = k.slice(i + 1); return D.tokens.find(function (t) { return t.c === c && t.a === a; }) || null; }
   function walletCoins(w) { return w.ct || w.or || []; }
   function inCoin(w, t) { return w.c === t.c && walletCoins(w).indexOf(t.a) >= 0; }
   function findTokenByCA(ca) { if (!D || !ca) return null; var l = ca.toLowerCase(); return D.tokens.find(function (t) { return t.a === ca || (t.a.slice(0, 2) === "0x" && t.a.toLowerCase() === l); }) || null; }
+  function coinClusters(t) { var set = {}; D.wallets.forEach(function (w) { if (inCoin(w, t)) set[w.a] = 1; }); return D.clusters.filter(function (c) { return c.c === t.c && c.w.some(function (a) { return set[a]; }); }); }
   function coinBundles(t) { return D.bundles.filter(function (b) { return b.c === t.c && b.t === t.a; }); }
   function coinLabel(t) { return (t.sy || short(t.a)) + " · " + chainName(t.c) + " · escaneado " + fmtDate(t.sa); }
   function coinChips(w, max) {
@@ -166,44 +170,71 @@
     return cs.slice(0, m).map(function (a) { var k = w.c + ":" + a; return '<span class="coinchip' + (cur && cur.a === a ? " cur" : "") + '" data-coin="' + esc(k) + '" data-tip="Ver solo las wallets de ' + esc(tokenSym(w.c, a)) + '">' + esc(tokenSym(w.c, a)) + "</span>"; }).join("") + (cs.length > m ? '<span class="mini">+' + (cs.length - m) + "</span>" : "");
   }
   function setCoin(k) {
-    S.coin = k || ""; S.pendingCoin = null; S.limit = 300;
-    var t = coinTok();
+    if (S.tab === "tokens") { S.tcoin = k || ""; S.tpending = null; if (k) S.tsub = "wallets"; }
+    else { S.coin = k || ""; S.pendingCoin = null; }
+    S.limit = 300;
     writeHash();
     renderAll();
   }
+  function openTokCoin(k, sub) {   // abre el análisis de una coin dentro de la pestaña Tokens
+    S.tcoin = k || ""; S.tpending = null; S.tsub = sub || "wallets"; S.limit = 300;
+    $("drawer").classList.add("hide"); goto("tokens");
+  }
   function writeHash() {   // guarda coin y filtros de etiquetas en la URL (se puede recargar o compartir)
-    var t = coinTok(), parts = [];
+    var t = coinTok(), parts = [], cur0 = decodeURIComponent(location.hash.slice(1));
+    if (S.tab === "tokens") {   // #tokens · #tokens/coin=<CA>[&sub=bundles][&con=..&sin=..]
+      var tca = t ? t.a : S.tpending, h = "tokens";
+      if (tca) {
+        h += "/coin=" + encodeURIComponent(tca);
+        if (S.tsub && S.tsub !== "wallets") h += "&sub=" + S.tsub;
+        if (S.tags.length) h += "&con=" + S.tags.join(",");
+        if (S.xtags.length) h += "&sin=" + S.xtags.join(",");
+      }
+      var turl = location.pathname + location.search + "#" + h;
+      if (location.href.slice(location.href.indexOf(location.pathname)) !== turl) history.replaceState(null, "", turl);
+      return;
+    }
     if (t) parts.push("coin=" + encodeURIComponent(t.a)); else if (S.pendingCoin) parts.push("coin=" + encodeURIComponent(S.pendingCoin));
     if (S.tags.length) parts.push("con=" + S.tags.join(","));
     if (S.xtags.length) parts.push("sin=" + S.xtags.join(","));
     var cur = decodeURIComponent(location.hash.slice(1));
-    if (!parts.length && cur && !/(^|&)(coin|con|sin)=/.test(cur)) return;   // (#conn, #check=… etc.: se dejan)
+    if (!parts.length && cur && cur.indexOf("tokens") !== 0 && !/(^|&)(coin|con|sin)=/.test(cur)) return;   // (#conn, #check=… etc.: se dejan)
     var url = location.pathname + location.search + (parts.length ? "#" + parts.join("&") : "");
     if (location.href.slice(location.href.indexOf(location.pathname)) !== url) history.replaceState(null, "", url);
   }
   function resolvePendingCoin() {
+    if (S.tpending && D && !tokScanBusy(S.tpending)) { var tp = findTokenByCA(S.tpending); if (tp) { S.tcoin = tp.c + ":" + tp.a; S.tpending = null; } }
     if (!S.pendingCoin || !D) return;
     var t = findTokenByCA(S.pendingCoin);
     if (t) { S.coin = t.c + ":" + t.a; S.pendingCoin = null; }
   }
   function fillCoins() {
-    var sel = $("coinSel"), toks = D.tokens.slice().sort(function (a, b) { return (b.sa || 0) - (a.sa || 0); });
-    var html = '<option value="">Todas (' + toks.length + ")</option>" + toks.map(function (t) { var k = t.c + ":" + t.a; return '<option value="' + esc(k) + '"' + (S.coin === k ? " selected" : "") + ">" + esc(coinLabel(t)) + "</option>"; }).join("");
-    if (S.pendingCoin) html += '<option value="" selected>' + esc(short(S.pendingCoin)) + " (aún sin datos)</option>";
+    var sel = $("coinSel"), toks = D.tokens.slice().sort(function (a, b) { return (b.sa || 0) - (a.sa || 0); }), ck = coinKey();
+    var html = '<option value="">Todas (' + toks.length + ")</option>" + toks.map(function (t) { var k = t.c + ":" + t.a; return '<option value="' + esc(k) + '"' + (ck === k ? " selected" : "") + ">" + esc(coinLabel(t)) + "</option>"; }).join("");
+    if (S.pendingCoin && S.tab !== "tokens") html += '<option value="" selected>' + esc(short(S.pendingCoin)) + " (aún sin datos)</option>";
     if (sel._h !== html) { sel.innerHTML = html; sel._h = html; }
   }
   function tokenUrl(t) { return ((D.chains[t.c] || {}).explorer || "").replace("/account/", "/token/").replace("/address/", "/token/") + t.a; }
   function renderCoinHead() {
-    var el = $("coinHead"), t = coinTok();
-    if (!t && !S.pendingCoin) { el.classList.add("hide"); el.innerHTML = ""; return; }
+    var el = $("coinHead"), t = coinTok(), tv = S.tab === "tokens";
+    if (!t && (tv || !S.pendingCoin)) { el.classList.add("hide"); el.innerHTML = ""; return; }
     el.classList.remove("hide");
     if (!t) { el.innerHTML = '<span class="sym">' + esc(short(S.pendingCoin)) + '</span><span class="muted">Esta coin todavía no está en los datos (¿escaneo en cola o en curso? Míralo en Trabajos).</span><button class="ghost right" data-coin="">✕ Ver todas las coins</button>'; return; }
     var nw = chainWallets().length, kv = function (k, v) { return '<div class="kv2">' + k + "<b>" + v + "</b></div>"; };
-    el.innerHTML = '<div><div class="sym">' + esc(t.sy || "?") + ' <span class="chainpill">' + esc(chainName(t.c)) + '</span></div><div class="nm">' + esc(t.nm || "") + "</div></div>" +
+    var k = t.c + ":" + t.a, bar = "";
+    el.classList.toggle("tv", tv);
+    if (tv) {
+      var nb = coinBundles(t).length, ncl = coinClusters(t).length, nsx = smartxRows().length;
+      if (S.tsub === "smartx" && !nsx) S.tsub = "wallets";
+      var sb = function (id, txt, n) { return '<button data-tsub="' + id + '" class="' + (S.tsub === id ? "on" : "") + '">' + txt + ' <span class="n">' + n + "</span></button>"; };
+      bar = '<div class="cvbar"><button class="ghost back" data-tback>← Volver a tokens</button><div class="seg tokseg" id="tokSeg">' + sb("wallets", "👛 Wallets", nw) + sb("bundles", "📦 Bundles", nb) + sb("clusters", "🕸 Clusters / conexiones", ncl) + (nsx ? sb("smartx", "🧠 Smart cruzado", nsx) : "") + "</div></div>";
+    }
+    el.innerHTML = bar + '<div><div class="sym">' + esc(t.sy || "?") + ' <span class="chainpill">' + esc(chainName(t.c)) + '</span></div><div class="nm">' + esc(t.nm || "") + "</div></div>" +
       '<div class="ca">' + esc(t.a) + ' <button class="copy" data-copy="' + esc(t.a) + '" title="Copiar CA">📋</button></div>' +
       kv("Wallets", nw) + kv("Compradores tempranos", t.nb) + kv("Bundles", coinBundles(t).length) + kv("Lanzado", fmtDate(t.lt)) + kv("Escaneado", fmtDate(t.sa) + " (" + ago(t.sa) + ")") + kv("MC", t.mc ? "$" + num(t.mc, 0) : "–") +
       '<div class="row small"><a class="xl" target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexScreener</a><a class="xl" target="_blank" rel="noopener" href="' + esc(tokenUrl(t)) + '">' + esc(exName(t.c)) + "</a></div>" +
-      '<div class="right row"><button class="danger" data-delcoin="' + esc(t.c + ":" + t.a) + '">🗑 Borrar coin</button><button class="ghost" data-coin="">✕ Ver todas las coins</button></div>';
+      '<div class="right row"><button class="danger" data-delcoin="' + esc(k) + '">🗑 Borrar coin</button>' +
+      (tv ? "" : '<button class="ghost" data-tokopen="' + esc(k) + '" data-tip="Abre esta coin en la pestaña Tokens: wallets, bundles, clusters y smart cruzado de la coin">📊 Análisis completo en Tokens</button><button class="ghost closecoin" data-coin="">✕ Cerrar vista de coin · ver ranking general</button>') + "</div>";
   }
   function chainWallets() { var t = coinTok(); return D.wallets.filter(function (w) { return t ? inCoin(w, t) : (!S.chain || w.c === S.chain); }); }
   function renderCards() {
@@ -528,6 +559,7 @@
       if (d.kind === "token") {
         D.tokens = D.tokens.filter(function (x) { return !(x.c === d.t.c && x.a === d.t.a); });
         if (S.coin === d.t.c + ":" + d.t.a) { S.coin = ""; writeHash(); }
+        if (S.tcoin === d.t.c + ":" + d.t.a) { S.tcoin = ""; writeHash(); }
       }
       var g = {}; gone.forEach(function (k) { g[k] = 1; delete S.sel[k]; delete FAVS[k]; delete ALIASES[k]; });
       D.wallets = D.wallets.filter(function (w) { return !g[key(w)]; }); D.wIdx = {}; D.wallets.forEach(function (w) { D.wIdx[key(w)] = w; });
@@ -563,7 +595,8 @@
       "<div>Edad</div><div>" + (w.ft ? (w.at ? "más de " : "") + dur(NOW() - w.ft) + " (" + fmtDate(w.ft) + ")" : "–") + (isFresh(w) ? ' <span class="leaf" data-tip="' + esc(freshTip(w)) + '">🌱 fresca</span>' : "") + "</div>" +
       "<div>Último fondeo</div><div>" + (w.lf ? ago(w.lf) + " (" + fmtDate(w.lf) + ")" : "–") + "</div>" +
       "<div>Última actividad</div><div>" + ago(w.la) + "</div>" +
-      "<div>Fondeada por</div><div>" + (w.fu ? '<a href="' + esc(explorer(w.c, w.fu)) + '" target="_blank" rel="noopener">' + esc(short(w.fu)) + "</a>" + (w.fl ? " · <b>" + esc(w.fl) + "</b>" : "") : "–") + "</div>" +
+      "<div>Fondeada por</div><div>" + (w.fu ? '<a href="' + esc(explorer(w.c, w.fu)) + '" target="_blank" rel="noopener">' + esc(short(w.fu)) + "</a>" + (w.fl ? " · <b>" + esc(w.fl) + "</b>" : "") + ((w.sv || []).filter(function (x) { return x.a === w.fu; }).map(function (x) { return ' <span class="svctag" data-tip="Servicio compartido: no cuenta como vínculo con otras wallets">' + esc(x.i + " " + x.n) + "</span>"; }).join("")) : "–") + "</div>" +
+      ((w.sv || []).length && !CK.hideSvc ? "<div>Servicios compartidos</div><div>" + w.sv.map(function (x) { return '<span class="svctag">' + esc(x.i + " " + x.n) + '</span> <span class="mini">' + esc(x.h) + " a " + plural(x.k, "wallet") + " de la base</span>"; }).join("<br>") + ' <div class="mini">No cuentan para los clusters.</div></div>' : "") +
       "<div>Cluster</div><div>" + (w.cl ? '<a href="#" data-cluster="' + esc(w.cl) + '" class="cl">' + esc(w.cl) + "</a>" : "–") + "</div>" +
       "<div>Bundles</div><div>" + ((w.bu || []).length || "–") + "</div>" +
       "<div>Copia a</div><div>" + (w.cp ? '<a href="#" data-open="' + esc(w.c + ":" + w.cp) + '">' + esc(short(w.cp)) + "</a>" : "–") + "</div>" +
@@ -589,25 +622,111 @@
     });
     $("bundlesBox").innerHTML = h;
   }
+  // ---------------------------------------------------------------- Tokens: buscador por CA, lista de coins y análisis por coin
+  function caFrom(txt) {   // mismo criterio que scan.parse_items (CA suelto o dentro de un link)
+    var x = (txt || "").trim(), m = x.match(/0x[a-fA-F0-9]{40}/); if (m) return m[0];
+    var parts = x.split(/[\s,;]+/);
+    for (var i = 0; i < parts.length; i++) { var seg = parts[i].split("?")[0].split("#")[0].replace(/\/+$/, "").split("/").pop(); m = seg.match(/[1-9A-HJ-NP-Za-km-z]{32,44}$/); if (m) return m[0]; }
+    return null;
+  }
+  function tokJob() { var s = S.tscan; return s && D ? (D.jobs || []).find(function (j) { return j.id === s.id; }) || null : null; }
+  function tokScanBusy(ca) {   // hay un escaneo lanzado desde aquí para ese CA y aún no ha terminado
+    var s = S.tscan; if (!s || !ca || s.ca.toLowerCase() !== ca.toLowerCase()) return false;
+    var j = tokJob(); return !j || j.status === "pending" || j.status === "running";
+  }
+  function tokPct(j) {
+    if (!j || j.status === "pending") return 3;
+    var p = j.progress || "", m = p.match(/(\d+)\s*\/\s*(\d+)/);
+    if (m && +m[2]) return Math.round(15 + 65 * (+m[1]) / (+m[2]));
+    if (/calculando/.test(p)) return 95; if (/precios/.test(p)) return 90; if (/2º nivel/.test(p)) return 85; if (/compradores/.test(p)) return 15; if (/primeras/.test(p)) return 8;
+    return 5;
+  }
+  function tokScanCheck() {   // al terminar el trabajo: abre la coin sola
+    var s = S.tscan; if (!s || !D) return;
+    var j = tokJob(), t = findTokenByCA(s.ca);
+    if (j && j.status === "error") return;
+    if (j && j.status === "done") {
+      if (t) {
+        S.tscan = null; localStorage.removeItem("wh_tscan"); clearInterval(S.tscanTimer);
+        if (S.tab === "tokens" && (!S.tcoin || (S.tpending && S.tpending.toLowerCase() === s.ca.toLowerCase()))) { S.tcoin = t.c + ":" + t.a; S.tpending = null; S.tsub = "wallets"; S.limit = 300; writeHash(); toast("✅ Escaneo terminado: abriendo " + esc(t.sy || short(t.a))); }
+        else toast("✅ Escaneo de " + esc(t.sy || short(t.a)) + " terminado (ábrelo en Tokens)");
+      } else if (!s.doneAt) { s.doneAt = NOW(); }
+    }
+  }
+  function tokSearch() {
+    var q = $("tokQ").value, ca = caFrom(q), msg = $("tokMsg");
+    if (!ca) { msg.innerHTML = '<span class="neg">No veo un CA válido ahí (Solana: base58 de 32-44 caracteres; EVM: 0x + 40 hex).</span>'; return; }
+    msg.textContent = "";
+    var t = findTokenByCA(ca);
+    if (t) { $("tokQ").value = ""; return openTokCoin(t.c + ":" + t.a); }
+    S.tcoin = ""; S.tpending = ca; writeHash(); renderAll();
+  }
+  function tokScan() {
+    var ca = S.tpending; if (!ca) return;
+    var pin = ($("tokPin").value || "").trim(); if (!pin) { $("tokScanMsg").innerHTML = '<span class="neg">Falta el PIN</span>'; return; }
+    PIN = pin; localStorage.setItem("wh_pin", PIN);
+    var ch = $("tokChain").value, btn = $("tokScanGo"); btn.disabled = true; $("tokScanMsg").textContent = "Enviando…";
+    api("/api/scan", { kind: "tokens", chain: ch, items: ca }).then(function (r) {
+      var got = (r.items || [])[0] || ca;
+      if (got !== ca) { S.tpending = got; writeHash(); }
+      S.tscan = { ca: got, id: r.id || null, t0: NOW(), chain: ch }; localStorage.setItem("wh_tscan", JSON.stringify(S.tscan));
+      toast("🔍 Escaneo en cola: se abrirá solo al terminar");
+      tokPoll(); setTimeout(loadData, 1500); renderAll();
+    }).catch(function (er) { btn.disabled = false; $("tokScanMsg").innerHTML = '<span class="neg">' + esc(er.message) + "</span>"; });
+  }
+  function tokPoll() { clearInterval(S.tscanTimer); S.tscanTimer = setInterval(function () { if (!S.tscan) return clearInterval(S.tscanTimer); loadData().catch(function () { }); }, 4000); }
+  function renderTokPend() {
+    var ca = S.tpending; if (!ca) return "";
+    var s = S.tscan && S.tscan.ca.toLowerCase() === ca.toLowerCase() ? S.tscan : null, j = s ? tokJob() : null, t = findTokenByCA(ca);
+    var h = '<div class="box tokpend"><h3>🪙 ' + esc(short(ca)) + (s ? " · escaneando" : " no está escaneada todavía") + '</h3><div class="ca addr">' + esc(ca) + ' <button class="copy" data-copy="' + esc(ca) + '" title="Copiar CA">📋</button></div>';
+    if (s && !(j && j.status === "error")) {
+      var st = j ? j.status : "pending", pct = j && j.status === "done" ? 100 : tokPct(j);
+      var msg = j && j.status === "done" ? (t ? "terminado" : "terminado; esperando a que lleguen los datos…") : j ? (j.progress || "en cola…") : "en cola…";
+      h += '<div class="tokprog"><span class="st ' + esc(st) + '">' + (STL[st] || st) + "</span> " + esc(msg) + ' <span class="mini">· ' + dur(NOW() - s.t0) + '</span></div><div class="pbar"><i style="width:' + pct + '%"></i></div>' +
+        (s.doneAt && !t && NOW() - s.doneAt > 90 ? '<div class="warnbox">El trabajo terminó pero esta coin no aparece en los datos (¿sin compradores o CA de un par en vez del token?). Míralo en <a href="#" data-goto="jobs">Trabajos</a>.</div>' : '<div class="note">Se abrirá sola cuando termine (suele tardar 1-5 min). Puedes seguir usando el panel mientras tanto.</div>');
+    } else {
+      if (s && j && j.status === "error") h += '<div class="warnbox">El escaneo falló: ' + esc(j.message || j.progress || "error") + "</div>";
+      var chains = ['<option value="auto">Detectar automáticamente</option>'].concat(Object.keys(D.chains).map(function (c) { return '<option value="' + c + '"' + (ca.slice(0, 2) !== "0x" && c === "solana" ? " selected" : "") + ">" + esc(D.chains[c].name) + "</option>"; })).join("");
+      h += '<div class="row form"><label>Chain <select id="tokChain">' + chains + '</select></label><input id="tokPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" value="' + esc(PIN) + '" style="width:110px"><button class="primary" id="tokScanGo">🔍 ' + (s ? "Reintentar escaneo" : "Escanear esta coin") + '</button><span id="tokScanMsg" class="muted small"></span></div>' +
+        (!BOX_OK ? '<div class="warnbox">El box no responde ahora mismo: el escaneo entrará en la cola de respaldo (si está configurada) o tendrás que esperar a que vuelva.</div>' : "") +
+        '<div class="note">Entra en la cola del box (pestaña Trabajos): saca hasta 150 compradores tempranos, analiza sus 30 días y calcula bundles, clusters y etiquetas. Cuando termine se abre aquí su análisis.</div>';
+    }
+    return h + '<div class="row" style="margin-top:8px"><button class="ghost" data-tback>← Volver a tokens</button></div></div>';
+  }
   function renderTokens() {
-    var ts = D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; });
-    $("tokensBox").innerHTML = '<div class="box"><h3>Tokens escaneados (' + ts.length + ')</h3><div style="overflow:auto"><table class="list"><tr><th>Token</th><th>Chain</th><th>CA</th><th>Lanzado</th><th>MC</th><th>Escaneado</th><th>Compradores tempranos</th><th>Wallets analizadas</th><th>Bundles</th><th></th></tr>' +
+    var box = $("tokensBox");
+    if (!$("tokQ")) box.innerHTML = '<div class="box toksearch"><h3>🔎 Analizar una coin</h3><div class="row"><input id="tokQ" type="search" autocomplete="off" spellcheck="false" placeholder="Pega el CA o un link (pump.fun, GMGN, Birdeye, explorador…)"><button class="primary" id="tokGo">Abrir</button></div><div id="tokMsg" class="small"></div><div class="note">Si ya está escaneada se abre su análisis (wallets, bundles, clusters…). Si no, puedes escanearla aquí mismo con tu PIN.</div></div><div id="tokPend"></div><div id="tokList"></div>';
+    var ph = renderTokPend(), pe = $("tokPend");
+    if (pe._h !== ph && !(document.activeElement && document.activeElement.closest("#tokPend") && S.tpending && !S.tscan)) { pe.innerHTML = ph; pe._h = ph; }
+    var ts = D.tokens.filter(function (t) { return !S.chain || t.c === S.chain; }).sort(function (a, b) { return (b.sa || 0) - (a.sa || 0); });
+    var cnt = {}; D.wallets.forEach(function (w) { walletCoins(w).forEach(function (a) { var k = w.c + ":" + a; cnt[k] = (cnt[k] || 0) + 1; }); });
+    $("tokList").innerHTML = '<div class="box"><h3>Coins escaneadas (' + ts.length + ')</h3><div class="note">Pulsa una coin para abrir su análisis: sus wallets (con todos los filtros y etiquetas), bundles, clusters y smart cruzado.</div><div style="overflow:auto"><table class="list toklist"><tr><th>Coin</th><th>Chain</th><th>CA</th><th>MC</th><th>Escaneada</th><th>Wallets</th><th>Bundles</th><th>Clusters</th><th></th></tr>' +
       ts.map(function (t) {
-        return "<tr><td><b>" + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + fmtDate(t.lt) + "</td><td>" + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + ago(t.sa) + (t.st === "scanning" ? " (en curso)" : "") + "</td><td>" + t.nb + "</td><td>" + (t.nw || 0) + "</td><td>" + t.bd + '</td><td><button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets</button> <button class="ghost" data-rescan-token="' + esc(t.c + ":" + t.a) + '">Re-escanear</button> <button class="danger" data-delcoin="' + esc(t.c + ":" + t.a) + '">🗑 Borrar coin</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
-      }).join("") + "</table></div></div>";
+        var k = t.c + ":" + t.a;
+        return '<tr class="tokrow" data-tcoin="' + esc(k) + '"><td><b>' + esc(t.sy || "?") + '</b> <span class="mini">' + esc(t.nm || "") + '</span></td><td><span class="chainpill">' + esc(chainName(t.c)) + '</span></td><td class="addr">' + esc(short(t.a)) + ' <button class="copy" data-copy="' + esc(t.a) + '">📋</button></td><td>' + (t.mc ? "$" + num(t.mc, 0) : "–") + "</td><td>" + fmtDate(t.sa) + ' <span class="mini">' + ago(t.sa) + (t.st === "scanning" ? " · en curso" : "") + "</span></td><td><b>" + (cnt[k] || 0) + "</b></td><td>" + coinBundles(t).length + "</td><td>" + coinClusters(t).length + '</td><td class="nowrap"><button class="primary sm" data-tcoin="' + esc(k) + '">Abrir →</button> <button class="ghost" data-rescan-token="' + esc(k) + '" title="Re-escanear (cola del box)">↻</button> <button class="danger" data-delcoin="' + esc(k) + '" title="Borrar coin">🗑</button> <a target="_blank" rel="noopener" href="https://dexscreener.com/' + esc(t.c) + "/" + esc(t.a) + '">DexS</a></td></tr>';
+      }).join("") + (ts.length ? "" : '<tr><td colspan="9" class="muted">Aún no hay coins escaneadas: pega un CA arriba.</td></tr>') + "</table></div></div>";
   }
   function renderConn() {
     renderConnSeg();
-    if (CK.sub === "check") { if (!CK.built) buildCheck(); applyCkPrefill(); return; }
-    var ctc = coinTok(), wsetc = {}; if (ctc) chainWallets().forEach(function (w) { wsetc[w.a] = 1; });
-    var cs = D.clusters.filter(function (c) { return ctc ? c.c === ctc.c && c.w.some(function (a) { return wsetc[a]; }) : (!S.chain || c.c === S.chain); });
+    if (CK.sub === "check") { if (!CK.built) buildCheck(); else if (CK.svcDirty) { CK.svcDirty = false; renderCkRes(); } applyCkPrefill(); return; }
+    renderClusters();
+  }
+  function renderClusters() {   // pestaña Conexiones › Clusters, y sub-pestaña Clusters del análisis por coin (Tokens)
+    var ctc = coinTok();
+    var cs = ctc ? coinClusters(ctc) : D.clusters.filter(function (c) { return !S.chain || c.c === S.chain; });
     var cross = D.cross.filter(function (c) { return ctc ? c.c === ctc.c && c.t.indexOf(ctc.a) >= 0 : (!S.chain || c.c === S.chain); });
-    var h = '<div class="box"><h3>🔁 Cruce de coins: wallets que entraron temprano (top 50) en 2+ tokens escaneados (' + cross.length + ')</h3>' +
+    var h = tokView() ? '<div class="box"><h3>🔗 Conexiones entre las wallets de ' + esc(ctc.sy || short(ctc.a)) + '</h3><div class="note">Los clusters de abajo ya salen de los datos del escaneo (0 créditos). Para un análisis a fondo (fondeadores a 2 saltos, puentes, transferencias directas), comprueba las 10 mejores wallets de esta coin por score: usa créditos de Helius/Etherscan y se abre en la pestaña Conexiones.</div><button class="primary" data-cktop>🔍 Comprobar conexiones del top 10 por score</button></div>' : "";
+    h += '<div class="box"><h3>🔁 Cruce de coins: wallets que entraron temprano (top 50) en 2+ tokens escaneados (' + cross.length + ')</h3>' +
       (cross.length ? '<div style="overflow:auto"><table class="list"><tr><th>Wallet</th><th>Chain</th><th>Nº tokens</th><th>Ranking medio</th><th>Tokens</th><th>Etiquetas</th></tr>' + cross.slice(0, 200).map(function (x) {
         var w = D.wIdx[x.c + ":" + x.a];
         return "<tr><td>" + walletLink(x.c, x.a) + '</td><td><span class="chainpill">' + esc(chainName(x.c)) + "</span></td><td><b>" + x.n + "</b></td><td>#" + x.ar + "</td><td>" + x.t.map(function (t) { return esc(tokenSym(x.c, t)); }).join(", ") + "</td><td>" + (w ? w.tg.slice(0, 4).map(function (t) { var d = tagDef(t); return '<span class="tag c-' + d.color + '">' + esc(d.label) + "</span>"; }).join("") : "") + "</td></tr>";
       }).join("") + "</table></div>" : '<div class="muted">Aparecerán cuando escanees 2 o más tokens (ideal: tus runners).</div>') + "</div>";
-    h += '<div class="box"><h3>Clusters (' + cs.length + ') · ' + D.stats.links + ' vínculos</h3><div class="note">Un cluster une wallets por: mismo fondeador (también a 2 saltos), una fondea a otra, transferencias entre ellas, mismo exchange en pocos minutos con importes parecidos, fondeo sincronizado antes de comprar el mismo token o bundles repetidos.</div></div>';
+    var SV = D.svc || {}, hubs = (SV.hubs || []).filter(function (x) { return ctc ? x.c === ctc.c : (!S.chain || x.c === S.chain); });
+    h += '<div class="box"><h3>Clusters (' + cs.length + ') · ' + D.stats.links + ' vínculos</h3><div class="note">Un cluster une wallets por: mismo fondeador (también a 2 saltos), una fondea a otra, transferencias entre ellas, mismo exchange en pocos minutos con importes parecidos, fondeo sincronizado antes de comprar el mismo token o bundles repetidos. <b>No cuentan los servicios compartidos</b> (puentes, bots, apps, fee payers): que dos wallets los usen no las une.</div>' +
+      '<div class="row ckopts" id="clSvc"><label class="chk"><input type="checkbox" id="clHideSvc"' + (CK.hideSvc ? " checked" : "") + '> Ocultar conexiones por servicios</label><span class="mini">' + (SV.skipped ? plural(SV.skipped, "vínculo") + " ignorado" + (SV.skipped > 1 ? "s" : "") + " por servicios" : "ningún vínculo ignorado por servicios") + "</span></div>" +
+      (hubs.length && !CK.hideSvc ? '<div class="svclist">' + hubs.slice(0, 30).map(function (x) {
+        return '<div class="ckbr s"><span class="svctag">' + esc(x.label) + "</span> " + walletLink(x.c, x.address) + ' <span class="chainpill">' + esc(chainName(x.c)) + '</span> <span class="small">fondeó a ' + plural(x.wallets, "wallet") + " de la base</span> <span class=\"mini\">· " + esc(svcBadge(x)) + "</span></div>";
+      }).join("") + "</div>" : "") + "</div>";
     cs.forEach(function (c) {
       var ws = c.w.map(function (a) { return D.wIdx[c.c + ":" + a]; }).filter(Boolean).sort(function (a, b) { return (b.sc || 0) - (a.sc || 0); });
       var kinds = {}; ws.forEach(function (w) { (w.lk || []).forEach(function (l) { kinds[l[1]] = (kinds[l[1]] || 0) + 1; }); });
@@ -641,7 +760,7 @@
     $("jobsBox").innerHTML = '<div class="box"><h3>Trabajos</h3><div style="overflow:auto"><table class="list"><tr><th>Estado</th><th>Tipo</th><th>Chain</th><th>Direcciones</th><th>Progreso / resultado</th><th>Creado</th><th>Duración</th></tr>' +
       (js.map(function (j) {
         var d = j.finished && j.started ? dur(j.finished - j.started) : j.started ? dur(NOW() - j.started) + "…" : "–";
-        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : j.kind === "connect" ? "🔗 Conexiones" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + (j.kind === "connect" && j.status !== "error" ? ' <button class="ghost" data-ckjob="' + esc(j.id) + '">🔗 ' + (j.status === "done" ? "Ver resultado" : "Ver progreso") + "</button>" : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
+        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : j.kind === "connect" ? "🔗 Conexiones" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-tcoin="' + esc(t.c + ":" + t.a) + '">🔎 Abrir análisis' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + (j.kind === "connect" && j.status !== "error" ? ' <button class="ghost" data-ckjob="' + esc(j.id) + '">🔗 ' + (j.status === "done" ? "Ver resultado" : "Ver progreso") + "</button>" : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
       }).join("") || '<tr><td colspan="7" class="muted">Sin trabajos todavía.</td></tr>') + "</table></div></div>";
   }
   function renderFavExtra() {
@@ -734,7 +853,23 @@
   }
 
   // ---------------------------------------------------------------- comprobar conexiones entre wallets (trabajo 'connect' en el box, con PIN)
-  var CK = { sub: "check", built: false, poll: null, job: null, res: null, list: null, sel: null, prefill: null, pos: null };
+  var CK = { sub: "check", built: false, poll: null, job: null, res: null, list: null, sel: null, prefill: null, pos: null, hideSvc: localStorage.getItem("wh_ck_hidesvc") === "1" };
+  // servicios compartidos (Relay, Axiom, bots, apps, fee payers…): nodos grises, aristas propias, casi no puntúan y se pueden ocultar
+  var SVC_T = { c: "#9ca3af", n: "Vía un servicio compartido (no cuenta)", dir: 1 };
+  function ckView(r) {
+    if (!CK.hideSvc) return { nodes: r.nodes || [], edges: r.edges || [] };
+    var sv = {}; (r.nodes || []).forEach(function (n) { if (n.kind === "service") sv[n.id] = 1; });
+    var edges = (r.edges || []).filter(function (e) { return !e.svc && !sv[e.a] && !sv[e.b]; }), used = {};
+    edges.forEach(function (e) { used[e.a] = 1; used[e.b] = 1; });
+    return { nodes: (r.nodes || []).filter(function (n) { return n.kind === "input" || (!sv[n.id] && used[n.id]); }), edges: edges };
+  }
+  function ckReason(p) {
+    if (!CK.hideSvc) return p.reason;
+    if (p.svc_only) return "Sin conexión real: solo comparten servicios (ocultos).";
+    return p.reason.replace(/ \(Además ambas usan [^)]*: no cuenta\.\)/, "");
+  }
+  function svcBadge(x) { return x.auto ? "autodetectado" + (x.why ? ": " + x.why : "") : x.verified ? "verificado" : "supuesto"; }
+  function setHideSvc(v) { CK.hideSvc = !!v; CK.svcDirty = true; localStorage.setItem("wh_ck_hidesvc", v ? "1" : "0"); CK.pos = null; if (CK.sel && CK.sel.node && CK.res && !ckView(CK.res).nodes.some(function (n) { return n.id === CK.sel.node; })) CK.sel = null; }
   var ETYPE = {
     transfer: { c: "#38bdf8", n: "Transferencia directa", dir: 1 },
     fee: { c: "#f472b6", n: "Pagó la comisión (fee payer)", dir: 1 },
@@ -771,7 +906,7 @@
   }
   function renderConnSeg() {
     document.querySelectorAll("#connSeg [data-csub]").forEach(function (b) { b.classList.toggle("on", b.dataset.csub === CK.sub); });
-    $("connCheck").classList.toggle("hide", CK.sub !== "check"); $("connBox").classList.toggle("hide", CK.sub !== "clusters");
+    $("connSeg").classList.remove("hide"); $("connCheck").classList.toggle("hide", CK.sub !== "check"); $("connBox").classList.toggle("hide", CK.sub !== "clusters");
   }
   function buildCheck() {
     var chains = ['<option value="auto">Detectar automáticamente</option>'].concat(Object.keys(D.chains).map(function (c) { return '<option value="' + c + '">' + esc(D.chains[c].name) + "</option>"; })).join("");
@@ -779,7 +914,7 @@
       '<textarea id="ckItems" spellcheck="false" placeholder="Pega 2 o más wallets (Solana o EVM, máx. 10): una por línea o separadas por espacios. Sirven también links de Solscan/GMGN. No hace falta que estén en la base."></textarea>' +
       '<div class="row"><label>Chain <select id="ckChain">' + chains + '</select></label><span id="ckCount" class="mini"></span></div>' +
       '<div class="row"><input id="ckPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" value="' + esc(PIN) + '" style="width:120px"><button class="primary" id="ckGo">🔗 Comprobar conexiones</button><span id="ckMsg" class="small"></span></div>' +
-      '<div class="note">Busca entre las wallets: <b>transferencias directas</b> (SOL, nativo y tokens, en los dos sentidos, en todo el historial del par), <b>fondeador común</b> (directo o a 2 saltos, con wallets puente), <b>mismo exchange</b> (hot wallets etiquetadas), <b>compras en el mismo slot/bloque</b>, <b>compras tempranas casi a la vez</b> y quién paga las comisiones de quién. Corre en tu box como trabajo (aparece en <b>Trabajos</b>) y se guarda aquí abajo. Coste aproximado en Solana: ~100 créditos de Helius por wallet (con topes de historial e intermediarios para no gastar de más).</div>' +
+      '<div class="note">Busca entre las wallets: <b>transferencias directas</b> (SOL, nativo y tokens, en los dos sentidos, en todo el historial del par), <b>fondeador común</b> (directo o a 2 saltos, con wallets puente), <b>mismo exchange</b> (hot wallets etiquetadas), <b>compras en el mismo slot/bloque</b>, <b>compras tempranas casi a la vez</b> y quién paga las comisiones de quién. Las wallets de <b>servicios compartidos</b> (puentes como Relay, bots y apps como Axiom o Fomo, fee payers) salen en gris y casi no puntúan: usarlas no conecta a nadie. Corre en tu box como trabajo (aparece en <b>Trabajos</b>) y se guarda aquí abajo. Coste aproximado en Solana: ~100 créditos de Helius por wallet (con topes de historial e intermediarios para no gastar de más).</div>' +
       "</div></div>" +
       '<div id="ckProg"></div><div id="ckRes"></div><div id="ckSaved"></div>';
     CK.built = true;
@@ -862,7 +997,7 @@
   }
   function ckColor(s) { return s >= 75 ? "#f87171" : s >= 50 ? "#fb923c" : s >= 25 ? "#facc15" : s > 0 ? "#94a3b8" : "#475569"; }
   function renderCkRes() {
-    var el = $("ckRes"); if (!el) return; var r = CK.res;
+    var el = $("ckRes"); if (!el) return; var r = CK.res; CK.svcDirty = false;
     if (!r) { el.innerHTML = ""; return; }
     var c = r.chain, info = r.info || {};
     var madres = (r.bridges || []).filter(function (b) { return b.madre; }), mi = r.madre_inputs || {};
@@ -874,9 +1009,13 @@
         ' <span class="mini">· ' + (i.error ? '<span class="neg">' + esc(i.error) + "</span>" : (i.n != null ? (i.truncated ? "≥" : "") + i.n + " tx leídas" : "")) + (i.truncated ? " ✂️" : "") + (i.funder ? " · fondeada por " + ckLink(c, i.funder.address) + (i.funder_label ? " (" + esc(i.funder_label) + ")" : "") : "") + "</span>" + (mi[a] ? ' <span class="madre">👑 posible wallet madre: envió fondos a ' + mi[a].map(function (x) { return esc(ckName(x)); }).join(", ") + "</span>" : "") + "</div>";
     }).join("");
     var pairs = (r.pairs || []).map(function (p, i) {
-      return '<tr data-ckpair="' + i + '" class="' + (CK.sel && CK.sel.pair === i ? "on" : "") + '"><td class="nowrap"><b>' + esc(ckName(p.a)) + "</b> ↔ <b>" + esc(ckName(p.b)) + '</b></td><td class="nowrap"><span class="score" style="background:' + ckColor(p.score) + '">' + p.score + '</span><div class="sbar"><i style="width:' + p.score + "%;background:" + ckColor(p.score) + '"></i></div></td><td>' + esc(p.reason) + "</td></tr>";
+      return '<tr data-ckpair="' + i + '" class="' + (CK.sel && CK.sel.pair === i ? "on" : "") + (p.svc_only ? " svcrow" : "") + '"><td class="nowrap"><b>' + esc(ckName(p.a)) + "</b> ↔ <b>" + esc(ckName(p.b)) + '</b></td><td class="nowrap"><span class="score" style="background:' + ckColor(p.score) + '">' + p.score + '</span><div class="sbar"><i style="width:' + p.score + "%;background:" + ckColor(p.score) + '"></i></div></td><td>' + (p.svc_only && !CK.hideSvc ? '<span class="svctag">solo servicio</span> ' : "") + esc(ckReason(p)) + "</td></tr>";
     }).join("");
-    var bridges = (r.bridges || []).map(function (b) {
+    var svcs = r.services || [], svcList = svcs.map(function (x) {
+      var b = (r.bridges || []).find(function (y) { return y.address === x.address; }) || {};
+      return '<div class="ckbr s"><span class="svctag" data-tip="' + esc((x.source ? "Fuente: " + x.source + ". " : "") + "Miles de usuarios comparten esta dirección: usarla no conecta a nadie.") + '">' + esc(x.label) + "</span> " + ckLink(c, x.address) + ' <button class="copy" data-copy="' + esc(x.address) + '">📋</button> <span class="small">' + esc(b.role || ("con " + (x.connects || []).map(ckName).join(", "))) + '</span> <span class="mini">· ' + esc(svcBadge(x)) + "</span></div>";
+    }).join("");
+    var bridges = (r.bridges || []).filter(function (b) { return !b.service; }).map(function (b) {
       return '<div class="ckbr ' + (b.madre ? "m" : b.hub ? "h" : "") + '">' + (b.madre ? '<span class="madre">👑 posible wallet madre</span> ' : b.hub ? '<span class="hubtag" data-tip="Mucha actividad (' + (b.txs || "?") + (b.txs_more ? "+" : "") + " tx en " + (b.span_h != null ? num(b.span_h, 0) + " h" : "?") + '): parece un servicio, bot o exchange. Cuenta mucho menos.">🏢 servicio/hub</span> ' : '<span class="mini">puente</span> ') +
         ckLink(c, b.address, b.label || short(b.address)) + ' <button class="copy" data-copy="' + esc(b.address) + '">📋</button> <span class="small">' + esc(b.role) + "</span>" + (b.txs ? ' <span class="mini">· ' + b.txs + (b.txs_more ? "+" : "") + " tx" + (b.span_h != null ? " en " + dur(b.span_h * 3600) : "") + "</span>" : "") + "</div>";
     }).join("");
@@ -884,19 +1023,25 @@
       '<span class="right row"><button class="exp" data-export="check">📤 Exportar grupo</button><button class="ghost" id="ckResX" title="Cerrar resultado">✕</button></span></div>' +
       '<div class="cksum">' + esc(r.summary || "Sin conexiones") + (madres.length ? ' · <span class="madre">👑 ' + madres.map(function (b) { return esc(b.label || short(b.address)); }).join(", ") + "</span>" : "") + "</div>" +
       '<div class="ckws">' + wl + "</div>" + notes +
-      '<div class="ckgrid"><div class="ckgraph"><svg id="ckSvg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg><div class="cklegend">' +
-      Object.keys(ETYPE).filter(function (t) { return (r.edges || []).some(function (e) { return e.type === t; }); }).map(function (t) { return '<span><i style="background:' + ETYPE[t].c + (t === "cobuy" ? ";height:0;border-top:2px dashed " + ETYPE[t].c : "") + '"></i>' + ETYPE[t].n + "</span>"; }).join("") +
-      '<span><b class="lg in"></b>tus wallets</span><span><b class="lg br"></b>puente</span><span><b class="lg md"></b>wallet madre</span><span><b class="lg hb"></b>servicio/hub</span><span><b class="lg cx"></b>exchange</span></div>' +
+      '<div class="row ckopts"><label class="chk" data-tip="Quita del grafo, de las pruebas y de los motivos las conexiones que solo pasan por un servicio compartido (puente, bot, app o fee payer). El score no cambia: ya valían casi 0."><input type="checkbox" id="ckHideSvc"' + (CK.hideSvc ? " checked" : "") + '> Ocultar conexiones por servicios</label><span class="mini">' + (svcs.length ? svcs.map(function (x) { return esc(x.label); }).join(" · ") : "ningún servicio compartido en este resultado") + "</span></div>" +
+      '<div class="ckgrid"><div class="ckgraph"><svg id="ckSvg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg><div class="cklegend">' + ckLegend(r) + "</div>" +
       '<div class="mini">Arrastra los nodos para moverlos. Toca una línea para ver las pruebas (fecha, importe y tx).</div></div>' +
       '<div class="ckside" id="ckEv"></div></div>' +
       '<h3 style="margin:14px 0 6px">Pares <span class="mini">· score 0-100 (toca una fila para verla en el grafo)</span></h3><div style="overflow:auto"><table class="list ckpairs"><tr><th>Par</th><th>Score</th><th>Por qué</th></tr>' + (pairs || '<tr><td colspan="3" class="muted">Sin pares.</td></tr>') + "</table></div>" +
       (bridges ? '<h3 style="margin:14px 0 6px">Wallets puente <span class="mini">· conectan 2 o más de tus wallets</span></h3>' + bridges : "") +
+      (svcs.length ? '<h3 style="margin:14px 0 6px">🔁 Servicios compartidos <span class="mini">· no cuentan como vínculo (peso casi 0)</span></h3>' + (CK.hideSvc ? '<div class="mini">' + plural(svcs.length, "servicio") + " oculto" + (svcs.length > 1 ? "s" : "") + " (desmarca «Ocultar conexiones por servicios» para verlos).</div>" : svcList) : "") +
       '<div class="mini" style="margin-top:10px">Coste: <b>' + (r.credits == null ? "?" : r.credits) + " " + esc(r.unit || "") + "</b>" + (r.seconds ? " · " + dur(r.seconds) : "") + (r.labels ? " · etiquetas: " + esc(r.labels.join(", ")) : "") + " · límites: " + esc((r.limits || {}).max_txs_per_wallet || "?") + " tx por wallet, " + esc((r.limits || {}).max_hop_lookups || "?") + " intermediarios a 2 saltos.</div></div>";
     drawGraph(); renderCkEv(); ckDrag($("ckSvg"));
   }
+  function ckLegend(r) {
+    var V = ckView(r), real = V.edges.filter(function (e) { return !e.svc; }), anySvc = V.edges.some(function (e) { return e.svc; }), svcN = V.nodes.some(function (n) { return n.kind === "service"; });
+    return Object.keys(ETYPE).filter(function (t) { return real.some(function (e) { return e.type === t; }); }).map(function (t) { return '<span><i style="background:' + ETYPE[t].c + (t === "cobuy" ? ";height:0;border-top:2px dashed " + ETYPE[t].c : "") + '"></i>' + ETYPE[t].n + "</span>"; }).join("") +
+      (anySvc ? '<span class="lgsvc"><i class="lsv"></i>' + SVC_T.n + "</span>" : "") +
+      '<span><b class="lg in"></b>tus wallets</span><span><b class="lg br"></b>puente</span><span><b class="lg md"></b>wallet madre</span><span' + (svcN ? ' class="lgsvc"' : "") + '><b class="lg sv"></b>servicio/hub (gris)</span><span><b class="lg cx"></b>exchange</span>';
+  }
   // ---- grafo (SVG, sin dependencias): layout de fuerzas + arrastrar
   function hashN(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10000) / 10000; }
-  function nodeR(n) { return n.kind === "input" ? 17 : n.kind === "cex" ? 14 : n.kind === "bridge" ? (n.madre ? 15 : 12) : 7; }
+  function nodeR(n) { return n.kind === "input" ? 17 : n.kind === "cex" ? 14 : n.kind === "service" ? 11 : n.kind === "bridge" ? (n.madre ? 15 : 12) : 7; }
   function ckDims() { return innerWidth < 700 ? { W: 480, H: 600 } : { W: 800, H: 520 }; }   // en móvil, lienzo vertical: nodos y líneas más grandes
   function layoutCk(r) {
     var dm = ckDims(), W = dm.W, H = dm.H, ns = r.nodes, P = {}, ins = ns.filter(function (n) { return n.kind === "input"; });
@@ -940,26 +1085,28 @@
   function drawGraph() {
     var svg = $("ckSvg"), r = CK.res; if (!svg || !r) return;
     var dm = ckDims();
-    if (!CK.pos || CK.dims !== dm.W) { CK.pos = layoutCk(r); CK.dims = dm.W; }
+    var V = ckView(r);
+    if (!CK.pos || CK.dims !== dm.W) { CK.pos = layoutCk(V); CK.dims = dm.W; }
     svg.setAttribute("viewBox", "0 0 " + dm.W + " " + dm.H);
-    var P = CK.pos, N = {}; r.nodes.forEach(function (n) { N[n.id] = n; });
-    var grp = {}; r.edges.forEach(function (e) { var k = e.a < e.b ? e.a + "|" + e.b : e.b + "|" + e.a; (grp[k] = grp[k] || []).push(e.id); });
-    var hl = ckHighlight(), defs = "<defs>" + Object.keys(ETYPE).map(function (t) { return '<marker id="ar-' + t + '" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + ETYPE[t].c + '"/></marker>'; }).join("") + "</defs>";
-    var es = r.edges.map(function (e) {
-      if (!P[e.a] || !P[e.b]) return "";
+    var P = CK.pos, N = {}; V.nodes.forEach(function (n) { N[n.id] = n; });
+    var grp = {}; V.edges.forEach(function (e) { var k = e.a < e.b ? e.a + "|" + e.b : e.b + "|" + e.a; (grp[k] = grp[k] || []).push(e.id); });
+    var MK = Object.assign({ svc: SVC_T }, ETYPE);
+    var hl = ckHighlight(), defs = "<defs>" + Object.keys(MK).map(function (t) { return '<marker id="ar-' + t + '" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + MK[t].c + '"/></marker>'; }).join("") + "</defs>";
+    var es = V.edges.map(function (e) {
+      if (!P[e.a] || !P[e.b] || !N[e.a] || !N[e.b]) return "";
       var k = e.a < e.b ? e.a + "|" + e.b : e.b + "|" + e.a, g = grp[k], i = g.indexOf(e.id), off = g.length > 1 ? (i - (g.length - 1) / 2) * 26 : 0;
-      var T = ETYPE[e.type] || { c: "#94a3b8", dir: 1 }, G = edgeGeom(e, P, off, nodeR(N[e.a]), nodeR(N[e.b]));
-      var on = hl.edges[e.id], dim = hl.any && !on, sw = 1.8 + Math.min(2.5, Math.log(1 + (e.n || 1)));
-      return '<g class="ed' + (on ? " on" : "") + (dim ? " dim" : "") + '" data-edge="' + esc(e.id) + '"><path class="ev" d="' + G.d + '" stroke="' + T.c + '" stroke-width="' + (on ? sw + 1.5 : sw).toFixed(1) + '"' + (e.type === "cobuy" ? ' stroke-dasharray="6 4"' : e.type === "hop" ? ' stroke-dasharray="2 3"' : "") + (T.dir ? ' marker-end="url(#ar-' + e.type + ')"' : "") + "/>" +
+      var T = e.svc ? SVC_T : ETYPE[e.type] || { c: "#94a3b8", dir: 1 }, G = edgeGeom(e, P, off, nodeR(N[e.a]), nodeR(N[e.b]));
+      var on = hl.edges[e.id], dim = hl.any && !on, sw = e.svc ? 1.6 : 1.8 + Math.min(2.5, Math.log(1 + (e.n || 1)));
+      return '<g class="ed' + (e.svc ? " svc" : "") + (on ? " on" : "") + (dim ? " dim" : "") + '" data-edge="' + esc(e.id) + '"><path class="ev" d="' + G.d + '" stroke="' + T.c + '" stroke-width="' + (on ? sw + 1.5 : sw).toFixed(1) + '"' + (e.svc ? ' stroke-dasharray="1 5" stroke-linecap="round"' : e.type === "cobuy" ? ' stroke-dasharray="6 4"' : e.type === "hop" ? ' stroke-dasharray="2 3"' : "") + (T.dir ? ' marker-end="url(#ar-' + (e.svc ? "svc" : e.type) + ')"' : "") + "/>" +
         '<path class="eh" d="' + G.d + '"/>' + ((e.n || 1) > 1 ? '<text class="en" x="' + G.lx.toFixed(1) + '" y="' + (G.ly + 4).toFixed(1) + '">×' + e.n + "</text>" : "") + "</g>";
     }).join("");
-    var nsv = r.nodes.map(function (n) {
+    var nsv = V.nodes.map(function (n) {
       var p = P[n.id], R = nodeR(n), on = hl.nodes[n.id], dim = hl.any && !on;
       var cls = "nd k-" + n.kind + (n.madre ? " madre" : "") + (n.hub ? " hub" : "") + (on ? " on" : "") + (dim ? " dim" : "");
       var shape = n.kind === "cex" ? '<rect x="' + (-R - 8) + '" y="' + (-R + 2) + '" width="' + (2 * R + 16) + '" height="' + (2 * R - 4) + '" rx="6"/>' : '<circle r="' + R + '"/>';
       var inner = n.kind === "input" ? '<text class="ni" y="4">' + esc(n.label) + "</text>" : n.madre ? '<text class="ni" y="5">👑</text>' : n.kind === "cex" ? '<text class="ni" y="4">🏦</text>' : "";
-      var w = n.kind === "input" && D.wIdx[r.chain + ":" + n.id], lab = n.kind === "input" ? (w && w.al ? w.al : short(n.id)) : n.kind === "cex" ? n.label : (n.label || short(n.id)) + (n.hub ? " 🏢" : "");
-      return '<g class="' + cls + '" data-node="' + esc(n.id) + '" transform="translate(' + p.x.toFixed(1) + "," + p.y.toFixed(1) + ')">' + (n.madre ? '<circle class="halo" r="' + (R + 6) + '"/>' : "") + shape + inner + '<text class="nl" y="' + (R + 13) + '">' + esc(lab) + "</text><title>" + esc(n.id + (n.role ? " · " + n.role : "")) + "</title></g>";
+      var w = n.kind === "input" && D.wIdx[r.chain + ":" + n.id], lab = n.kind === "input" ? (w && w.al ? w.al : short(n.id)) : n.kind === "cex" || n.kind === "service" ? n.label : (n.label || short(n.id)) + (n.hub ? " 🏢" : "");
+      return '<g class="' + cls + '" data-node="' + esc(n.id) + '" transform="translate(' + p.x.toFixed(1) + "," + p.y.toFixed(1) + ')">' + (n.madre ? '<circle class="halo" r="' + (R + 6) + '"/>' : "") + shape + inner + '<text class="nl" y="' + (R + 13) + '">' + esc(lab) + "</text><title>" + esc(n.id + (n.kind === "service" ? " · servicio compartido: " + n.svc + " (" + svcBadge(n) + ")" : "") + (n.role ? " · " + n.role : "")) + "</title></g>";
     }).join("");
     svg.innerHTML = defs + '<g class="eds">' + es + '</g><g class="nds">' + nsv + "</g>";
   }
@@ -977,7 +1124,8 @@
     if (s.edge) {
       var e = r.edges.find(function (x) { return x.id === s.edge; }); if (!e) { el.innerHTML = ""; return; }
       var T = ETYPE[e.type] || { c: "#94a3b8", n: e.type, dir: 1 };
-      el.innerHTML = '<div class="row"><h4><span class="sw" style="background:' + T.c + '"></span>' + esc(e.label || T.n) + '</h4><button class="ghost right" id="ckEvX">✕</button></div>' +
+      el.innerHTML = '<div class="row"><h4><span class="sw" style="background:' + (e.svc ? SVC_T.c : T.c) + '"></span>' + esc(e.label || T.n) + (e.svc ? ' <span class="svctag">vía ' + esc(e.svc) + "</span>" : "") + '</h4><button class="ghost right" id="ckEvX">✕</button></div>' +
+        (e.svc ? '<div class="mini" style="margin-bottom:6px">Movimiento con un servicio compartido (' + esc(e.svc) + "): no cuenta como vínculo entre tus wallets.</div>" : "") +
         '<div class="small" style="margin-bottom:6px"><b>' + esc(ckName(e.a)) + "</b> " + (T.dir ? "→" : "↔") + " <b>" + esc(ckName(e.b)) + "</b>" + ((e.n || 1) > e.ev.length ? ' <span class="mini">· ' + e.n + " en total, se muestran " + e.ev.length + "</span>" : "") + "</div>" +
         '<div class="ckevl">' + e.ev.map(function (v) {
           var amt = v.amt != null ? amtFmt(v.amt) + " " + esc(v.asset || "") + (v.amt2 != null ? " / " + amtFmt(v.amt2) + (e.type === "slot" || e.type === "cobuy" ? " " + esc(nat(c)) : "") : "") : "";
@@ -990,13 +1138,15 @@
     if (s.pair != null) {
       var p = r.pairs[s.pair]; if (!p) { el.innerHTML = ""; return; }
       el.innerHTML = '<div class="row"><h4>' + esc(ckName(p.a)) + " ↔ " + esc(ckName(p.b)) + ' <span class="score" style="background:' + ckColor(p.score) + '">' + p.score + '</span></h4><button class="ghost right" id="ckEvX">✕</button></div><div class="small" style="margin-bottom:6px">' + esc(p.level) + "</div>" +
-        (p.ev.length ? p.ev.map(function (v) { return '<div class="evrow"><div class="small">' + (v.w ? '<span class="wt">+' + v.w + "</span> " : "") + esc(v.text) + "</div>" + ((v.edges || []).length ? '<div class="row small">' + v.edges.map(function (id) { var ed = r.edges.find(function (x) { return x.id === id; }); return ed ? '<button class="ghost mini" data-ckedge="' + esc(id) + '">ver pruebas: ' + esc((ETYPE[ed.type] || {}).n || ed.type) + "</button>" : ""; }).join("") + "</div>" : "") + "</div>"; }).join("") : '<div class="muted">No se encontró ninguna conexión entre estas dos en lo leído.</div>');
+        (p.ev.length ? p.ev.filter(function (v) { return !(CK.hideSvc && v.type === "service"); }).map(function (v) { return '<div class="evrow' + (v.type === "service" ? " evsvc" : "") + '"><div class="small">' + (v.type === "service" ? '<span class="svctag">' + esc((v.icon ? v.icon + " " : "") + (v.svc || "servicio")) + "</span> " : "") + (v.w ? '<span class="wt">+' + v.w + "</span> " : "") + esc(v.text) + "</div>" + ((v.edges || []).length ? '<div class="row small">' + v.edges.map(function (id) { var ed = r.edges.find(function (x) { return x.id === id; }); return ed && !(CK.hideSvc && ed.svc) ? '<button class="ghost mini" data-ckedge="' + esc(id) + '">ver pruebas: ' + esc(ed.svc ? "vía " + ed.svc : (ETYPE[ed.type] || {}).n || ed.type) + "</button>" : ""; }).join("") + "</div>" : "") + "</div>"; }).join("") : '<div class="muted">No se encontró ninguna conexión entre estas dos en lo leído.</div>') +
+        (CK.hideSvc && p.ev.some(function (v) { return v.type === "service"; }) ? '<div class="mini">+ conexiones por servicios ocultas (' + esc((p.services || []).join(", ")) + ")</div>" : "");
       return;
     }
     if (s.node) {
       var n = r.nodes.find(function (x) { return x.id === s.node; }); if (!n) { el.innerHTML = ""; return; }
       var b = (r.bridges || []).find(function (x) { return x.address === n.id; }), isCex = n.kind === "cex";
-      el.innerHTML = '<div class="row"><h4>' + (n.kind === "input" ? "Tu wallet " + esc(n.label) : isCex ? "🏦 Exchange: " + esc(n.label) : n.madre ? "👑 Posible wallet madre" : n.hub ? "🏢 Servicio / hub" : n.kind === "bridge" ? "Wallet puente" : "Intermediario") + '</h4><button class="ghost right" id="ckEvX">✕</button></div>' +
+      el.innerHTML = '<div class="row"><h4>' + (n.kind === "input" ? "Tu wallet " + esc(n.label) : isCex ? "🏦 Exchange: " + esc(n.label) : n.kind === "service" ? esc(n.label) + ' <span class="mini">servicio compartido</span>' : n.madre ? "👑 Posible wallet madre" : n.hub ? "🏢 Servicio / hub" : n.kind === "bridge" ? "Wallet puente" : "Intermediario") + '</h4><button class="ghost right" id="ckEvX">✕</button></div>' +
+        (n.kind === "service" ? '<div class="small svcbox">' + (n.auto ? "No está en la lista de servicios conocidos, pero " + esc(n.why || "tiene muchísima actividad") + ": parece un servicio, bot o relayer." : "Dirección de <b>" + esc(n.svc) + "</b> (" + (n.verified ? "verificada" : "supuesta, sin confirmar") + (n.source ? ": " + esc(n.source) : "") + ").") + " Que dos wallets la usen <b>no las conecta</b>: la comparten miles de usuarios. Peso en el score: casi 0.</div>" : "") +
         (isCex ? '<div class="small">Hot wallets etiquetadas de ' + esc(n.label) + ". Que varias wallets saquen fondos del mismo exchange solo pesa si es casi a la vez y con importes parecidos.</div>" :
           '<div class="mini addr" style="word-break:break-all">' + esc(n.id) + ' <button class="copy" data-copy="' + esc(n.id) + '">📋</button></div><div class="row small" style="margin:6px 0">' + exLinks({ c: c, a: n.id }) + "</div>" +
           (n.role ? '<div class="small">' + esc(n.role) + "</div>" : "") + (b && b.txs ? '<div class="mini">Actividad: ' + b.txs + (b.txs_more ? "+" : "") + " tx" + (b.span_h != null ? " en " + dur(b.span_h * 3600) : "") + (b.hub ? " → parece un servicio/bot, cuenta mucho menos" : "") + "</div>" : "") +
@@ -1031,17 +1181,21 @@
   // ---------------------------------------------------------------- render general
   function renderAll() {
     if (!D) return;
-    resolvePendingCoin(); fillCoins(); renderCoinHead();
+    tokScanCheck(); resolvePendingCoin(); fillCoins(); renderCoinHead();
     renderSources(); renderCards(); renderJobs();
     $("updated").textContent = "Datos: " + ago(D.generated) + (BOX_OK ? " · box en directo" : "");
-    var t = S.tab;
-    ["wallets", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].forEach(function (x) { $("tab-" + x).classList.toggle("hide", !(x === t || (x === "wallets" && t === "favs"))); });
-    if (t === "wallets" || t === "favs") { renderFavExtra(); renderTable(t === "favs"); }
-    if (t === "bundles") renderBundles();
-    if (t === "smartx") renderSmartx();
+    var t = S.tab, tv = tokView(), show = t;
+    document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === t); });
+    // análisis por coin dentro de Tokens: se muestran las mismas secciones (tabla de Wallets, Bundles, Clusters, Smart) filtradas por coinTok()
+    if (tv) show = { wallets: "wallets", bundles: "bundles", clusters: "conn", smartx: "smartx" }[S.tsub] || "wallets";
+    document.body.classList.toggle("tokview", tv);
+    ["wallets", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].forEach(function (x) { $("tab-" + x).classList.toggle("hide", !(x === show || (x === "wallets" && show === "favs"))); });
+    if (show === "wallets" || show === "favs") { renderFavExtra(); renderTable(show === "favs"); }
+    if (show === "bundles") renderBundles();
+    if (show === "smartx") renderSmartx();
     if (S.pendingAddFav) setTimeout(runPendingAddFav, 0);
-    if (t === "tokens") renderTokens();
-    if (t === "conn") renderConn();
+    if (t === "tokens" && !tv) renderTokens();
+    if (show === "conn") { if (tv) { $("connSeg").classList.add("hide"); $("connCheck").classList.add("hide"); $("connBox").classList.remove("hide"); renderClusters(); } else renderConn(); }
     if (t === "scan" && !document.activeElement.closest("#scanBox")) renderScan();
     if (t === "jobs") renderJobs();
   }
@@ -1049,6 +1203,8 @@
     S.tab = tab; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === tab); });
     if (tab === "favs" && !S.alerts && PIN && BOX_OK) loadAlerts();
     if (tab === "scan") renderScan();
+    if (tab === "tokens" || (location.hash.indexOf("#tokens") === 0 && (tab === "wallets" || tab === "favs"))) writeHash();
+    else if (location.hash.indexOf("#tokens") === 0) history.replaceState(null, "", location.pathname + location.search + "#" + tab);
     renderAll(); window.scrollTo(0, 0);
   }
   function toggleFav(k) {
@@ -1076,7 +1232,7 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,#noiseBtn,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#tgDetect,#tgTest,[data-addfav],#fClear,#moreBtn,tr[data-k]");
+    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,#noiseBtn,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-tback],[data-tsub],[data-tcoin],[data-tokopen],[data-cktop],#tokGo,#tokScanGo,[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#tgDetect,#tgTest,[data-addfav],#fClear,#moreBtn,tr[data-k]");
     if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
     if (t.dataset.csub) { CK.sub = t.dataset.csub; return renderConn(); }
     if (t.id === "ckGo") return submitCheck();
@@ -1109,7 +1265,7 @@
     if (t.dataset.untag) { e.stopPropagation(); S.tags = S.tags.filter(function (x) { return x !== t.dataset.untag; }); S.xtags = S.xtags.filter(function (x) { return x !== t.dataset.untag; }); writeHash(); return renderAll(); }
     if (t.id === "clrTags") { S.tags = []; S.xtags = []; writeHash(); return renderAll(); }
     if (t.id === "noiseBtn") { toggleNoise(); S.limit = 300; writeHash(); return renderAll(); }
-    if (t.dataset.tab) return goto(t.dataset.tab);
+    if (t.dataset.tab) { if (t.dataset.tab === "tokens" && S.tab === "tokens") { S.tcoin = ""; S.tpending = null; } return goto(t.dataset.tab); }
     if (t.dataset.goto) { e.preventDefault(); return goto(t.dataset.goto); }
     if (t.dataset.star) { e.stopPropagation(); return toggleFav(t.dataset.star); }
     if (t.dataset.copy) { e.stopPropagation(); return copy(t.dataset.copy); }
@@ -1117,7 +1273,14 @@
     if (t.dataset.tag) { if (Date.now() - LP_AT < 900) return; cycleTag(t.dataset.tag); S.limit = 300; writeHash(); return renderAll(); }
     if (t.dataset.open) { e.preventDefault(); return openWallet(t.dataset.open); }
     if (t.hasAttribute("data-close")) return $("drawer").classList.add("hide");
-    if (t.hasAttribute("data-coin")) { e.preventDefault(); e.stopPropagation(); $("drawer").classList.add("hide"); var kc = t.dataset.coin; if (kc) { S.tab = "wallets"; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === "wallets"); }); window.scrollTo(0, 0); } return setCoin(kc); }
+    if (t.hasAttribute("data-tback")) { e.preventDefault(); S.tcoin = ""; S.tpending = null; S.limit = 300; writeHash(); renderAll(); window.scrollTo(0, 0); return; }
+    if (t.dataset.tsub) { S.tsub = t.dataset.tsub; S.limit = 300; writeHash(); return renderAll(); }
+    if (t.dataset.tcoin) { e.preventDefault(); e.stopPropagation(); return openTokCoin(t.dataset.tcoin); }
+    if (t.dataset.tokopen) { e.preventDefault(); return openTokCoin(t.dataset.tokopen); }
+    if (t.hasAttribute("data-cktop")) { var tk = coinTok(); if (!tk) return; return checkConnections(chainWallets().slice().sort(function (a, b) { return (b.sc || 0) - (a.sc || 0); }).slice(0, 10).map(function (w) { return w.a; }), tk.c); }
+    if (t.id === "tokGo") return tokSearch();
+    if (t.id === "tokScanGo") return tokScan();
+    if (t.hasAttribute("data-coin")) { e.preventDefault(); e.stopPropagation(); $("drawer").classList.add("hide"); var kc = t.dataset.coin; if (kc && S.tab !== "tokens") { S.tab = "wallets"; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === "wallets"); }); window.scrollTo(0, 0); } return setCoin(kc); }
     if (t.dataset.cluster) { e.preventDefault(); $("drawer").classList.add("hide"); CK.sub = "clusters"; return goto("conn"); }
     if (t.dataset.kind) { S.kind = t.dataset.kind; return renderScan(); }
     if (t.dataset.alias) { e.stopPropagation(); return editAlias(t.dataset.alias); }
@@ -1145,6 +1308,13 @@
   ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund", "fGroup", "fAct", "fFav", "fHide", "fFresh"].forEach(function (id) { $(id).addEventListener("input", function () { S.limit = 300; renderAll(); }); });
   $("chainSel").addEventListener("change", function () { S.chain = this.value; var t = coinTok(); if (t && S.chain && t.c !== S.chain) return setCoin(""); renderAll(); });
   $("coinSel").addEventListener("change", function () { setCoin(this.value); });
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (t && (t.id === "ckHideSvc" || t.id === "clHideSvc")) {
+      setHideSvc(t.checked);
+      if (t.id === "ckHideSvc") { renderCkRes(); } else { renderConn(); }
+    }
+  });
   window.addEventListener("hashchange", function () { readHash(); if (S.pendingAddFav) goto("favs"); renderAll(); setTimeout(runPendingAddFav, 400); });
   // tooltips (ratón y pulsación larga en móvil)
   var tip = $("tip"), lp, tipHide, LP_AT = 0;
@@ -1169,6 +1339,18 @@
   function readHash() {
     var h = decodeURIComponent(location.hash.slice(1));
     if (!h) return;
+    var lst = function (v) { return (v || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean); };
+    if (h === "tokens" || h.indexOf("tokens/") === 0) {   // #tokens/coin=<CA>[&sub=..][&con=..&sin=..]
+      S.tab = "tokens";
+      var kt = {}; h.slice(7).split("&").forEach(function (p) { var i = p.indexOf("="); if (i > 0) kt[p.slice(0, i)] = p.slice(i + 1); });
+      if (kt.coin) {
+        var tca = kt.coin.trim(), tcur = coinTok();
+        if (!tcur || (tcur.a !== tca && tcur.a.toLowerCase() !== tca.toLowerCase())) { S.tcoin = ""; S.tpending = tca; resolvePendingCoin(); }
+        S.tsub = ["bundles", "clusters", "smartx"].indexOf(kt.sub) >= 0 ? kt.sub : "wallets";
+        S.tags = lst(kt.con); S.xtags = lst(kt.sin).filter(function (x) { return S.tags.indexOf(x) < 0; });
+      } else { S.tcoin = ""; S.tpending = null; }
+      return;
+    }
     if (/(^|&)(coin|con|sin)=/.test(h)) {
       var kv = {}; h.split("&").forEach(function (p) { var i = p.indexOf("="); if (i > 0) kv[p.slice(0, i)] = p.slice(i + 1); });
       var list = function (v) { return (v || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean); };
@@ -1183,6 +1365,8 @@
     else if (h.indexOf("addfav=") === 0) { S.tab = "favs"; S.pendingAddFav = h.slice(7); }
     else if (["wallets", "favs", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
   }
+  try { var ts0 = JSON.parse(localStorage.getItem("wh_tscan") || "null"); if (ts0 && ts0.ca && NOW() - ts0.t0 < 7200) { S.tscan = ts0; tokPoll(); } else localStorage.removeItem("wh_tscan"); } catch (er) { }
+  document.addEventListener("keydown", function (e) { if (e.key === "Enter" && e.target && e.target.id === "tokQ") { e.preventDefault(); tokSearch(); } if (e.key === "Enter" && e.target && e.target.id === "tokPin") { e.preventDefault(); tokScan(); } });
   if (location.hash) { readHash(); setTimeout(function () { goto(S.tab); }, 300); }
   function runPendingAddFav() { var k = S.pendingAddFav; if (!k || !D) return; S.pendingAddFav = null; history.replaceState(null, "", location.pathname + location.search + "#favs"); if (FAVS[k]) { toast("Ya está en Mis wallets"); return; } addFavFromAlert(k); }
 })();

@@ -21,7 +21,7 @@ from collections import defaultdict
 from itertools import combinations
 from .config import cfg, secret
 from .chains import CHAINS, WSOL, is_evm_address, is_sol_address
-from . import cex
+from . import cex, services
 from .deltas import extract, from_rpc
 
 log = logging.getLogger("wh")
@@ -42,21 +42,20 @@ DEFAULTS = {
     "hub_min_txs": 1000,          # ≥ 1000 tx en ≤ 7 días = servicio/bot: no cuenta como wallet madre
     "hub_hours": 168,
     "max_nodes": 45,
+    # servicios compartidos (services.py): las conexiones solo a través de ellos casi no puntúan
+    "service_weight": 2,               # peso (0-100) de «las dos usan el mismo servicio»
+    "service_autodetect": True,        # marcar como «servicio/hub» las wallets con cientos de contrapartes
+    "service_min_counterparties": 150, # contrapartes distintas para ser hub
+    "service_probe_min_txs": 300,      # solo se muestrean contrapartes si la wallet tiene ≥ 300 tx (ahorra créditos)
+    "service_sample_pages": 3,         # Solana: páginas de 100 transferencias (10 créditos c/u; se para antes si ya es claro)
+    "hub_min_funded_db": 25,           # fondeó a ≥ 25 wallets de la base → hub (gratis)
 }
-# direcciones de infraestructura que nunca son «puente» (propinas Jito, comisiones de launchpads, autoridades de AMM)
-INFRA = {
-    "solana": {
-        "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5", "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
-        "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY", "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
-        "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh", "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
-        "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL", "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
-        "CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM", "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1",
-        "11111111111111111111111111111111",
-    },
-    "evm": {"0x0000000000000000000000000000000000000000", "0x000000000000000000000000000000000000dead"},
-}
+# direcciones de infraestructura que nunca son «puente» (propinas Jito, comisiones de pump.fun, autoridades de AMM):
+# se ignoran del todo. Salen de services.py (entradas con ignore=True).
+INFRA = {f: {a for a, e in tab.items() if e.get("ignore")} for f, tab in services.SERVICES.items()}
 TYPE_LABEL = {"transfer": "transferencia directa", "fee": "pagó comisiones", "fund": "envió fondos", "first": "primer fondeo",
-              "hop": "fondeó (2 saltos)", "cex": "fondos desde exchange", "slot": "compra en el mismo slot/bloque", "cobuy": "compras casi a la vez"}
+              "hop": "fondeó (2 saltos)", "cex": "fondos desde exchange", "slot": "compra en el mismo slot/bloque", "cobuy": "compras casi a la vez",
+              "service": "solo comparten un servicio"}
 
 
 def conf():
@@ -217,6 +216,31 @@ class SolSource:
         f = self.h.funder_of(addr)
         return {"address": f["funder"], "amount": f["funder_amount"], "ts": f["funded_at"], "tx": None} if f.get("funder") else None
 
+    def counterparties(self, addr, pages, need):
+        """Contrapartes distintas en sus últimas transferencias (≤ pages × 100; 10 créditos por página).
+        Se para en cuanto llega a `need` o si la diversidad es baja (no va a llegar)."""
+        if self.no_transfers_api:
+            return {}
+        seen, sampled, tok = set(), 0, None
+        try:
+            for _ in range(max(1, pages)):
+                opts = {"limit": 100, "sortOrder": "desc"}
+                if tok:
+                    opts["paginationToken"] = tok
+                r = self._transfers(addr, opts)
+                for x in r.get("data") or []:
+                    sampled += 1
+                    for k in ("fromUserAccount", "toUserAccount"):
+                        v = x.get(k)
+                        if v and v != addr:
+                            seen.add(v)
+                tok = r.get("paginationToken")
+                if not tok or len(seen) >= need or len(seen) < 0.35 * sampled:
+                    break
+        except Exception as e:
+            log.debug("contrapartes %s: %s", addr[:6], e)
+        return {"distinct": len(seen), "sampled": sampled}
+
     def activity(self, addr):
         r = self.h.gtfa(addr, details="signatures", order="desc", limit=1000)
         d = r.get("data") or []
@@ -263,7 +287,9 @@ class EvmSource:
     def activity(self, addr):
         d = self.cl.call(module="account", action="txlist", address=addr.lower(), startblock=0, endblock=99999999, page=1, offset=1000, sort="desc") or []
         span = (int(d[0]["timeStamp"]) - int(d[-1]["timeStamp"])) / 3600 if len(d) > 1 else None
-        return {"n": len(d), "more": len(d) >= 1000, "span_h": span}
+        a = addr.lower()
+        cps = {(t.get("to") if (t.get("from") or "").lower() == a else t.get("from") or "").lower() for t in d} - {"", a}
+        return {"n": len(d), "more": len(d) >= 1000, "span_h": span, "distinct": len(cps), "sampled": len(d)}   # contrapartes gratis
 
 
 def detect_evm_chain(wallets):
@@ -551,6 +577,21 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
         l = lab_of(a)
         return bool(l and l.get("kind") == "cex")
 
+    act, svc_memo = {}, {}
+
+    def svc(x):
+        """Servicio compartido (lista conocida, hub autodetectado en esta comprobación o en caché) o None."""
+        if not x or x in I or str(x).startswith("cex:"):
+            return None
+        if x not in svc_memo:
+            e = services.known(chain, x)
+            if not e and (act.get(x) or {}).get("why"):
+                e = services.hub_entry(act[x]["why"])
+            if not e:
+                e = services.label(c, chain, x)
+            svc_memo[x] = e
+        return svc_memo[x]
+
     for w, P in prof.items():
         for t in P["transfers"]:
             cp = t["cp"]
@@ -588,14 +629,14 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
                 tot[s] += sum(e["amt"] or 0 for e in evs)
         top = sorted(tot, key=lambda x: -tot[x])
         mine = ([first_f[w]] if w in first_f else []) + top
-        cands += [x for x in dict.fromkeys(mine)][:C["max_counterparties"]]
+        cands += [x for x in dict.fromkeys(mine) if not services.known(chain, x)][:C["max_counterparties"]]   # los servicios conocidos no se exploran
     shared = defaultdict(set)
     for (s, d) in list(flows) + list(fees):
         if s in I and d not in I:
             shared[d].add(s)
         elif d in I and s not in I:
             shared[s].add(d)
-    cands = list(dict.fromkeys([x for x in shared if len(shared[x]) >= 2] + cands))
+    cands = list(dict.fromkeys([x for x in shared if len(shared[x]) >= 2 and not services.known(chain, x)] + cands))
     possible = len(cands)
     cands = cands[:C["max_hop_lookups"]]
     if possible > len(cands):
@@ -640,21 +681,45 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
                 if w not in dist[y] or dist[y][w][0] > 2:
                     dist[y][w] = (2, x)
     bridges = {x: d for x, d in dist.items() if len(d) >= 2}
-    # ¿servicio/hub? (mucha actividad) para los puentes más importantes
-    act = {}
-    order = sorted(bridges, key=lambda x: (-len(bridges[x]), sum(v[0] for v in bridges[x].values())))
+    # ¿servicio/hub? Primero la lista conocida y la caché (gratis); si no, actividad (+ contrapartes si hace falta)
+    order = sorted([x for x in bridges if not services.known(chain, x)], key=lambda x: (-len(bridges[x]), sum(v[0] for v in bridges[x].values())))
+    probed, from_cache = 0, 0
     for k, x in enumerate(order[:C["max_bridges_checked"]], 1):
+        cg = services.cache_get(c, chain, x)
+        if cg:
+            act[x] = {"n": cg[1]["n"], "span_h": cg[1]["span_h"], "distinct": cg[1]["distinct"], "why": cg[1]["why"] if cg[0] else None, "cached": True}
+            from_cache += 1
+            continue
         progress(f"revisando puentes {k}/{min(len(order), C['max_bridges_checked'])}")
         try:
-            act[x] = src.activity(x)
+            a = src.activity(x)
         except Exception as e:
             log.debug("actividad: %s", e)
+            continue
+        why = services.judge(a, C)
+        if not why and C["service_autodetect"] and "distinct" not in a and hasattr(src, "counterparties") and (a.get("n") or 0) >= C["service_probe_min_txs"]:
+            a.update(src.counterparties(x, C["service_sample_pages"], C["service_min_counterparties"]))
+            probed += 1
+            why = services.judge(a, C)
+        if not why and c is not None:
+            try:
+                nf = c.execute("SELECT COUNT(*) FROM wallets WHERE chain=? AND funder=?", (chain, x)).fetchone()[0]
+            except Exception:
+                nf = 0
+            if nf >= C["hub_min_funded_db"]:
+                why = f"fondeó a {nf} wallets de la base"
+        if not C["service_autodetect"] and why and "transacciones" not in why:
+            why = None
+        a["why"] = why
+        act[x] = a
+        services.cache_put(c, chain, x, bool(why), a.get("n"), a.get("distinct"), a.get("span_h"), why)
     if len(order) > C["max_bridges_checked"]:
         notes.append(f"Se revisó la actividad (¿servicio/hub?) de {C['max_bridges_checked']} puentes de {len(order)}.")
+    if from_cache:
+        notes.append(f"Servicio/hub: {from_cache} puente(s) ya revisado(s) antes (caché, sin coste).")
 
     def is_hub(x):
-        a = act.get(x)
-        return bool(a and a["n"] >= C["hub_min_txs"] and a.get("span_h") is not None and a["span_h"] <= C["hub_hours"])
+        return bool(svc(x))
 
     def flow_edge(s, d):
         typ = "first" if (d in first_f and first_f[d] == s) or (d in hop_of and hop_of[d]["address"] == s) else "fund"
@@ -690,7 +755,8 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
             (da, ma), (db, mb) = dd[a], dd[b]
             if (ma and ma == mb) or any(m and is_hub(m) for m in (ma, mb)):
                 continue        # mismo intermediario (ya es puente él) o camino a través de un servicio/hub: no aporta
-            nm = short(x)
+            S = svc(x)
+            nm = (S["name"] if not S.get("auto") else f"servicio/hub {short(x)}") if S else short(x)
             if da == 1 and db == 1:
                 fa, fb = first_f.get(a) == x, first_f.get(b) == x
                 ina, inb, outa, outb = (x, a) in flows, (x, b) in flows, (a, x) in flows, (b, x) in flows
@@ -716,13 +782,16 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
                     w, txt = 32, f"fondeador común a 2 saltos: {nm} fondeó a {name(near)} y a {short(mid)}, que fondeó a {name(far)}"
             else:
                 w, txt = 25, f"fondeador común a 2 saltos: {nm} (vía {short(ma)} y {short(mb)})"
-            if hub:
-                w, txt = round(w * 0.25), txt + " — ojo: es un servicio/hub con mucha actividad"
             used_nodes.add(x)
             eids = link_edges(x, a) + link_edges(x, b)
             for p in (ma, mb):
                 if p:
                     used_nodes.add(p)
+            if S:
+                who = S["name"] if not S.get("auto") else f"un servicio/hub ({short(x)})"
+                ev_pairs[(a, b)].append({"type": "service", "w": C["service_weight"], "svc": S["name"], "icon": S["icon"], "node": x, "edges": sorted(set(eids)),
+                                         "text": f"posible conexión solo porque ambas usan {who} ({txt}; no cuenta como vínculo real)"})
+                continue
             ev_pairs[(a, b)].append({"type": "bridge", "w": w, "text": txt, "edges": sorted(set(eids)), "node": x})
 
     # ---- 6) mismo exchange
@@ -788,17 +857,30 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
     for a, b in pairs:
         evs = sorted(ev_pairs.get((a, b), []), key=lambda e: -e["w"])
         # varios puentes del mismo tipo: se suman con rendimientos decrecientes
-        ws, nb = [], 0
+        ws, nb, ns = [], 0, 0
         for e in evs:
             if e["type"] == "bridge":
                 nb += 1
                 ws.append(e["w"] if nb <= 2 else e["w"] * 0.3)
+            elif e["type"] == "service":
+                ns += 1
+                ws.append(e["w"] if ns <= 2 else 0)      # servicios compartidos: casi nada, y no se acumulan
             else:
                 ws.append(e["w"])
         s = combine(ws)
-        top = ([e["text"] for e in evs if e["w"] >= 10] or [e["text"] for e in evs if e["w"] > 0])[:3]
-        reason = level(s) + (": " + "; ".join(top) + "." if top else ". No hay transferencias, fondeadores ni compras en común en lo leído.")
-        out_pairs.append({"a": a, "b": b, "score": s, "level": level(s), "reason": reason[0].upper() + reason[1:], "ev": evs})
+        real = [e for e in evs if e["type"] != "service"]
+        svcs = list(dict.fromkeys(e["svc"] if not e["text"].startswith("posible conexión solo porque ambas usan un servicio/hub") else "un servicio/hub"
+                                  for e in evs if e["type"] == "service"))
+        top = ([e["text"] for e in real if e["w"] >= 10] or [e["text"] for e in real if e["w"] > 0])[:3]
+        svc_txt = ("posible conexión solo porque ambas usan " + " y ".join([", ".join(svcs[:-1]), svcs[-1]] if len(svcs) > 1 else svcs)) if svcs else ""
+        if top:
+            reason = level(s) + ": " + "; ".join(top) + "." + (f" (Además ambas usan {', '.join(svcs)}: no cuenta.)" if svcs else "")
+        elif svcs:
+            reason = level(s) + ": " + svc_txt + " (servicio compartido: no es un vínculo real)."
+        else:
+            reason = level(s) + ". No hay transferencias, fondeadores ni compras en común en lo leído."
+        out_pairs.append({"a": a, "b": b, "score": s, "level": level(s), "reason": reason[0].upper() + reason[1:], "ev": evs,
+                          "svc_only": bool(svcs) and not any(e["w"] > 0 for e in real), "services": svcs})
     out_pairs.sort(key=lambda p: -p["score"])
 
     sends = defaultdict(set)     # quién envió dinero (o pagó comisiones) a qué wallets
@@ -813,7 +895,8 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
         if not any(e.get("node") == x for evs in ev_pairs.values() for e in evs):
             continue
         conn = sorted(bridges[x], key=lambda w: idx[w])
-        hub = is_hub(x)
+        S = svc(x)
+        hub = bool(S)
         direct_to = sorted(sends[x] & I, key=lambda w: idx[w])
         hop_to = sorted([w for w in conn if bridges[x][w][0] == 2 and (x, bridges[x][w][1]) in flows], key=lambda w: idx[w])
         recv = sorted([w for w in conn if (w, x) in flows], key=lambda w: idx[w])
@@ -828,7 +911,7 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
         funded = set(direct_to) | set(hop_to)
         out_bridges.append({"address": x, "connects": conn, "madre": not hub and len(funded) >= 2, "hub": hub, "role": "; ".join(role) or "movimientos con " + ", ".join(name(w) for w in conn),
                             "txs": a["n"] if a else None, "txs_more": a.get("more") if a else None, "span_h": round(a["span_h"], 1) if a and a.get("span_h") is not None else None,
-                            "label": (lab_of(x) or {}).get("name")})
+                            "label": (S or {}).get("display") or (lab_of(x) or {}).get("name"), "service": S})
     nat_to = defaultdict(set)     # wallet madre entre las propias wallets: envió SOL/nativo (≥ mínimo) o fue el primer fondeo de ≥ 2
     for (a, b), rows in direct.items():
         for r in rows.values():
@@ -848,12 +931,22 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
     keep = set(inputs) | {b["address"] for b in out_bridges}
     for e in edges.values():
         keep.add(e["a"]); keep.add(e["b"])
+    def svc_node(x, S, **kw):
+        return dict({"id": x, "kind": "service", "label": S["display"] if not S.get("auto") else f"{S['icon']} servicio/hub", "svc": S["name"], "icon": S["icon"],
+                     "verified": S.get("verified"), "source": S.get("source"), "auto": S.get("auto"), "why": S.get("why"), "madre": False, "hub": True}, **kw)
+
     for b in out_bridges:
-        nodes.append({"id": b["address"], "kind": "bridge", "label": short(b["address"]), "madre": b["madre"], "hub": b["hub"], "role": b["role"]})
+        S = b.get("service")
+        if S:
+            nodes.append(svc_node(b["address"], S, role=b["role"]))
+        else:
+            nodes.append({"id": b["address"], "kind": "bridge", "label": short(b["address"]), "madre": b["madre"], "hub": b["hub"], "role": b["role"]})
     have = {n_["id"] for n_ in nodes}
     for x in sorted(keep - have):
         if x.startswith("cex:"):
             nodes.append({"id": x, "kind": "cex", "label": x[4:]})
+        elif svc(x):
+            nodes.append(svc_node(x, svc(x)))
         else:
             nodes.append({"id": x, "kind": "hop", "label": short(x)})
     if len(nodes) > C["max_nodes"]:
@@ -862,11 +955,26 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
         nodes = nodes[:C["max_nodes"]]
         edges = {k: e for k, e in edges.items() if e["a"] in allowed and e["b"] in allowed}
 
+    for e in edges.values():      # aristas que tocan un servicio: estilo propio en el grafo
+        S = svc(e["a"]) or svc(e["b"])
+        if S:
+            e["svc"] = S["name"] if not S.get("auto") else "servicio/hub"
+    svc_list = []
+    for n_ in nodes:
+        if n_["kind"] == "service":
+            svc_list.append({"address": n_["id"], "name": n_["svc"], "label": n_["label"], "icon": n_["icon"], "verified": n_["verified"], "source": n_["source"],
+                             "auto": n_["auto"], "why": n_.get("why"), "connects": sorted(bridges.get(n_["id"], {}), key=lambda w: idx[w])})
+    if svc_list:
+        notes.append("Servicios compartidos (no cuentan como vínculo): " + "; ".join(
+            f"{s_['label']} {short(s_['address'])}" + (f" (autodetectado: {s_['why']})" if s_["auto"] else " (verificado)" if s_["verified"] else " (supuesto)") for s_ in svc_list) + ".")
+    if probed:
+        notes.append(f"Autodetección de servicios: se muestrearon las contrapartes de {probed} puente(s) (≤ {C['service_sample_pages']} × 10 créditos c/u).")
     info = {}
     for w in inputs:
         P = prof[w]
         info[w] = {"i": idx[w], "n": P["n"], "truncated": P["truncated"], "oldest": P["oldest"], "newest": P["newest"], "error": P["error"], "db": P["db"],
-                   "funder": P["funder"], "funder_label": (lab_of(P["funder"]["address"]) or {}).get("name") if P["funder"] else None,
+                   "funder": P["funder"], "funder_label": ((svc(P["funder"]["address"]) or {}).get("display") or (lab_of(P["funder"]["address"]) or {}).get("name")) if P["funder"] else None,
+                   "funder_service": bool(P["funder"] and svc(P["funder"]["address"])),
                    "buys": len(P["buys"]), "transfers": len(P["transfers"])}
     used = src.credits - credits0
     conn = [p for p in out_pairs if p["score"] >= 25]
@@ -874,7 +982,7 @@ def run(c, chain, wallets, progress=None, source=None, labeler=None, nusd=None):
     summary = (f"{len(conn)} de {len(out_pairs)} pares conectados (score ≥ 25)" + (f"; el más fuerte: W{idx[best['a']]}–W{idx[best['b']]} con {best['score']}/100" if best and best["score"] else "")
                + (f"; {nm_} posible{'s' if nm_ > 1 else ''} wallet{'s' if nm_ > 1 else ''} madre" if (nm_ := sum(1 for b in out_bridges if b['madre']) + len(madre_inputs)) else ""))
     return {"version": 1, "chain": chain, "created": int(time.time()), "wallets": inputs, "nodes": nodes, "edges": list(edges.values()),
-            "pairs": out_pairs, "bridges": out_bridges, "madre_inputs": madre_inputs, "info": info, "notes": notes, "summary": summary,
+            "pairs": out_pairs, "bridges": out_bridges, "madre_inputs": madre_inputs, "info": info, "notes": notes, "summary": summary, "services": svc_list,
             "credits": used, "unit": src.unit, "labels": lab.names(), "seconds": round(time.time() - t_start, 1),
             "limits": {k: C[k] for k in ("max_txs_per_wallet", "first_txs", "max_counterparties", "max_hop_lookups", "max_bridges_checked", "cobuy_window_s")}}
 
