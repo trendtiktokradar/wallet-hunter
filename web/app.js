@@ -1,6 +1,7 @@
 /* Wallet Hunter · panel (sin dependencias) */
 (function () {
   "use strict";
+  window.WH_BUILD = "__V__";   // la versión desplegada (la pone el workflow de Pages)
   var CFG = window.WH_CONFIG;
   var D = null, BOX = null, BOX_OK = false;
   var S = { coin: "", pendingCoin: null, sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], xtags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };

@@ -20,6 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Versionar los ficheros (evita mezclar app.js/style.css viejos de la caché con un index.html nuevo)
+        run: |
+          V="${GITHUB_SHA::7}"
+          sed -i "s/__V__/$V/g" web/index.html web/app.js
+          grep -c "?v=$V" web/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
