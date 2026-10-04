@@ -292,19 +292,27 @@ async def tokens_tests(pg, D, tag, mobile):
     await pg.locator("#tokScanGo").click(); await pg.wait_for_timeout(600)
     sc = SCANS[-1] if SCANS else {}
     ok(sc.get("kind") == "tokens" and sc.get("items") == NEWCA and sc.get("pin") == "test-pin", tag + "lanza /api/scan (tokens + PIN)")
-    await pg.wait_for_timeout(4500)
-    prog = await pg.locator("#tokPend").inner_text() if await vis("#tokPend .pbar") else ""
-    ok("en curso" in prog or "en cola" in prog, tag + "muestra el progreso del trabajo: " + " ".join(prog.split())[:80])
-    await shot("tokens-progreso")
-    opened = False
-    for _ in range(20):
-        await pg.wait_for_timeout(1000)
-        if await vis("#coinHead") and "NEWT" in await pg.locator("#coinHead").inner_text(): opened = True; break
-    ok(opened and "#tokens/coin=" + NEWCA in pg.url and await vis("#tab-wallets"), tag + "al terminar el trabajo abre sola la coin escaneada")
-    rn = await pg.locator("#tbl tbody tr[data-k]").count()
-    ok(rn == 5, tag + f"wallets de la coin nueva ({rn}=5)")
-    ok(await pg.evaluate("localStorage.getItem('wh_tscan')") is None, tag + "escaneo pendiente limpiado")
-    await shot("tokens-escaneada")
+    if not NO_BOX:   # en directo el /api/scan es simulado pero los datos vienen del box real: el trabajo no existe
+        pend2 = await pg.locator("#tokPend").inner_text()
+        ok("escaneando" in pend2 and await vis("#tokPend .pbar"), tag + "tras lanzar: estado «escaneando» con barra de progreso")
+        await shot("tokens-progreso")
+        await pg.evaluate("localStorage.removeItem('wh_tscan')")
+        await pg.goto(pg.url.split("#")[0], wait_until="networkidle"); await pg.wait_for_timeout(1500)
+        TOKSCAN.clear()
+    else:
+        await pg.wait_for_timeout(4500)
+        prog = await pg.locator("#tokPend").inner_text() if await vis("#tokPend .pbar") else ""
+        ok("en curso" in prog or "en cola" in prog, tag + "muestra el progreso del trabajo: " + " ".join(prog.split())[:80])
+        await shot("tokens-progreso")
+        opened = False
+        for _ in range(20):
+            await pg.wait_for_timeout(1000)
+            if await vis("#coinHead") and "NEWT" in await pg.locator("#coinHead").inner_text(): opened = True; break
+        ok(opened and "#tokens/coin=" + NEWCA in pg.url and await vis("#tab-wallets"), tag + "al terminar el trabajo abre sola la coin escaneada")
+        rn = await pg.locator("#tbl tbody tr[data-k]").count()
+        ok(rn == 5, tag + f"wallets de la coin nueva ({rn}=5)")
+        ok(await pg.evaluate("localStorage.getItem('wh_tscan')") is None, tag + "escaneo pendiente limpiado")
+        await shot("tokens-escaneada")
     # Wallets: ranking global con selector de coin; botón claro de cerrar y acceso al análisis
     await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(300)
     ok(not await vis("#coinHead") and await pg.locator("#tbl tbody tr[data-k]").count() == min(len(D["wallets"]), 300), tag + "Wallets sigue siendo el ranking global")
@@ -715,8 +723,12 @@ async def _svc_tests(pg, D, tag, mobile):
     ok(await pg.locator("#clHideSvc").is_checked() and await pg.locator("#connBox .svclist").count() == 0, tag + "clusters: el interruptor se comparte (oculto)")
     await pg.locator("#clHideSvc").click(); await pg.wait_for_timeout(300)
     cl = await txt("#clSvc")
-    ok(not await pg.locator("#clHideSvc").is_checked() and "7 vínculos ignorados por servicios" in cl and await pg.locator("#connBox .svclist .ckbr").count() == 2, tag + "clusters: vínculos ignorados por servicios + lista: " + cl[:80])
-    ok("🔁 Relay" in await txt("#connBox .svclist") and "autodetectado" in await txt("#connBox .svclist"), tag + "clusters: servicio conocido y hub autodetectado")
+    if NO_BOX:
+        ok(not await pg.locator("#clHideSvc").is_checked() and "7 vínculos ignorados por servicios" in cl and await pg.locator("#connBox .svclist .ckbr").count() == 2, tag + "clusters: vínculos ignorados por servicios + lista: " + cl[:80])
+        ok("🔁 Relay" in await txt("#connBox .svclist") and "autodetectado" in await txt("#connBox .svclist"), tag + "clusters: servicio conocido y hub autodetectado")
+    else:   # datos reales: lo que diga data.json
+        SV = (D or {}).get("svc") or {}; nh = len([x for x in SV.get("hubs") or []][:30]); sk = SV.get("skipped") or 0
+        ok(not await pg.locator("#clHideSvc").is_checked() and (("%d vínculo" % sk) in cl if sk else "ningún vínculo ignorado por servicios" in cl) and await pg.locator("#connBox .svclist .ckbr").count() == nh, tag + f"clusters (datos reales): {sk} ignorados · {nh} servicios: " + cl[:80])
     if SHOTS:
         await pg.locator("#connBox .box").first.scroll_into_view_if_needed() if mobile else None
         await pg.locator("#clSvc").scroll_into_view_if_needed()
