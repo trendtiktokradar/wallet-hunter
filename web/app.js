@@ -3,7 +3,7 @@
   "use strict";
   var CFG = window.WH_CONFIG;
   var D = null, BOX = null, BOX_OK = false;
-  var S = { coin: "", pendingCoin: null, sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
+  var S = { coin: "", pendingCoin: null, sel: {}, visible: [], tab: "wallets", sort: "sc", asc: false, tags: [], xtags: [], chain: "", limit: 300, kind: "tokens", scanChain: "auto" };
   var FAVS = load("wh_favs", {});            // "chain:addr" -> {alias}
   var ALIASES = load("wh_aliases", {});      // "chain:addr" -> alias (privados: viven en el box, con PIN; aquí solo una copia local)
   var FRESH_DAYS = 7;
@@ -159,9 +159,18 @@
   function setCoin(k) {
     S.coin = k || ""; S.pendingCoin = null; S.limit = 300;
     var t = coinTok();
-    var url = location.pathname + location.search + (t ? "#coin=" + encodeURIComponent(t.a) : "");
-    if (location.href.slice(location.href.indexOf(location.pathname)) !== url) history.replaceState(null, "", url);
+    writeHash();
     renderAll();
+  }
+  function writeHash() {   // guarda coin y filtros de etiquetas en la URL (se puede recargar o compartir)
+    var t = coinTok(), parts = [];
+    if (t) parts.push("coin=" + encodeURIComponent(t.a)); else if (S.pendingCoin) parts.push("coin=" + encodeURIComponent(S.pendingCoin));
+    if (S.tags.length) parts.push("con=" + S.tags.join(","));
+    if (S.xtags.length) parts.push("sin=" + S.xtags.join(","));
+    var cur = decodeURIComponent(location.hash.slice(1));
+    if (!parts.length && cur && !/(^|&)(coin|con|sin)=/.test(cur)) return;   // (#conn, #check=… etc.: se dejan)
+    var url = location.pathname + location.search + (parts.length ? "#" + parts.join("&") : "");
+    if (location.href.slice(location.href.indexOf(location.pathname)) !== url) history.replaceState(null, "", url);
   }
   function resolvePendingCoin() {
     if (!S.pendingCoin || !D) return;
@@ -214,7 +223,7 @@
 
   // ---------------------------------------------------------------- filtros
   function val(id) { var v = $(id).value; return v === "" ? null : +v; }
-  function filtered(onlyFavs) {
+  function filtered(onlyFavs, skipX) {
     var q = $("fSearch").value.trim().toLowerCase(), sc = val("fScore"), pn = val("fPnl"), wr = val("fWr"), tk = val("fTok"), trd = val("fTrades"), fh = val("fFund"), fresh = $("fFresh").checked;
     var grp = $("fGroup").value, act = $("fAct").value, fav = $("fFav").checked || onlyFavs, hide = $("fHide").checked;
     return chainWallets().filter(function (w) {
@@ -235,27 +244,50 @@
       if (fav && !isFav(w)) return false;
       if (hide && (w.tg.indexOf("bot") >= 0 || w.tg.indexOf("bundle") >= 0 || w.tg.indexOf("insider") >= 0 || w.pf)) return false;
       for (var i = 0; i < S.tags.length; i++) if (w.tg.indexOf(S.tags[i]) < 0) return false;
+      for (var j = 0; j < S.xtags.length; j++) if (S.xtags[j] !== skipX && w.tg.indexOf(S.xtags[j]) >= 0) return false;
       return true;
     });
   }
+  var NOISE = ["bot", "sniper", "bundle", "one_hit", "insuficiente", "una_vez"];   // preset «Quitar ruido» (se excluyen)
+  function tagState(id) { return S.tags.indexOf(id) >= 0 ? "inc" : S.xtags.indexOf(id) >= 0 ? "exc" : ""; }
+  function cycleTag(id) {   // 1.º clic: con (✓) · 2.º: sin (✕) · 3.º: quitar
+    var st = tagState(id);
+    S.tags = S.tags.filter(function (x) { return x !== id; }); S.xtags = S.xtags.filter(function (x) { return x !== id; });
+    if (st === "") S.tags.push(id); else if (st === "inc") S.xtags.push(id);
+  }
+  function noiseOn() { var have = NOISE.filter(function (id) { return D.tagIdx[id]; }); return have.length > 0 && have.every(function (id) { return S.xtags.indexOf(id) >= 0; }); }
+  function toggleNoise() {
+    var on = noiseOn();
+    NOISE.forEach(function (id) { if (!D.tagIdx[id]) return; S.tags = S.tags.filter(function (x) { return x !== id; }); S.xtags = S.xtags.filter(function (x) { return x !== id; }); if (!on) S.xtags.push(id); });
+    toast(on ? "Ruido visible otra vez" : "Ocultando " + NOISE.filter(function (id) { return D.tagIdx[id]; }).map(function (id) { return esc(tagDef(id).label); }).join(", "));
+  }
   function renderChips(rows) {
     // todas las etiquetas siempre visibles; orden estable (por frecuencia en la chain elegida, sin filtros)
-    var cnt = {}, tot = {};
+    S.tags = S.tags.filter(function (id) { return D.tagIdx[id]; }); S.xtags = S.xtags.filter(function (id) { return D.tagIdx[id]; });
+    var cnt = {}, tot = {}, hid = {};
     rows.forEach(function (w) { w.tg.forEach(function (t) { cnt[t] = (cnt[t] || 0) + 1; }); });
     chainWallets().forEach(function (w) { w.tg.forEach(function (t) { tot[t] = (tot[t] || 0) + 1; }); });
+    // excluidas: cuántas wallets oculta cada una (con el resto de filtros aplicados)
+    S.xtags.forEach(function (x) { hid[x] = filtered(S.tab === "favs", x).filter(function (w) { return w.tg.indexOf(x) >= 0; }).length; });
     var ids = D.tags.map(function (t) { return t.id; });
     ids.sort(function (a, b) { return (tot[b] || 0) - (tot[a] || 0) || tagDef(a).label.localeCompare(tagDef(b).label); });
+    var pl = function (n) { return n + " wallet" + (n === 1 ? "" : "s"); };
     $("chips").innerHTML = ids.map(function (id) {
-      var t = tagDef(id), sel = S.tags.indexOf(id) >= 0, n = cnt[id] || 0;
-      var tip = t.help + (sel ? " · Seleccionada: clic para quitarla." : n ? " · Con los filtros actuales: " + n + " wallet" + (n > 1 ? "s" : "") + (S.tags.length ? " (añadiéndola, quedarían " + n + ")" : "") + "." : " · Con los filtros actuales daría 0 resultados.");
-      return '<button class="chip c-' + t.color + (sel ? " sel" : "") + (!sel && !n ? " zero" : "") + '" data-tag="' + id + '" data-tip="' + esc(tip) + '"' + (sel ? ' aria-pressed="true"' : "") + ">" + esc(t.label) + '<span class="n">' + n + "</span></button>";
+      var t = tagDef(id), st = tagState(id), n = st === "exc" ? hid[id] || 0 : cnt[id] || 0;
+      var tip = t.help + (st === "inc" ? " · ✓ CON esta etiqueta: solo se ven las wallets que la tienen (" + pl(n) + "). Clic → excluirla (✕)." :
+        st === "exc" ? " · ✕ SIN esta etiqueta: oculta " + pl(n) + " que la tienen. Clic → quitar el filtro." :
+          n ? " · Clic: ver solo las que la tienen (quedarían " + pl(n) + "); 2.º clic: ocultarlas; 3.º: quitar." : " · Con los filtros actuales ninguna wallet la tiene (incluirla daría 0, excluirla no cambia nada).");
+      return '<button class="chip c-' + t.color + (st === "inc" ? " sel" : st === "exc" ? " exc" : "") + (!n ? " zero" : "") + '" data-tag="' + id + '" data-tip="' + esc(tip) + '" aria-pressed="' + (st === "inc" ? "true" : st === "exc" ? "mixed" : "false") + '">' + esc(t.label) + '<span class="n">' + (st === "exc" ? "−" : "") + n + "</span></button>";
     }).join("");
+    var nb = $("noiseBtn"); if (nb) { var on = noiseOn(); nb.classList.toggle("on", on); nb.textContent = on ? "🧹 Ruido oculto ✓" : "🧹 Quitar ruido"; }
     var box = $("tagSel");
-    if (!S.tags.length) { box.classList.add("hide"); box.innerHTML = ""; return; }
+    if (!S.tags.length && !S.xtags.length) { box.classList.add("hide"); box.innerHTML = ""; return; }
     box.classList.remove("hide");
-    box.innerHTML = '<span class="lbl">Filtrando por ' + (S.tags.length > 1 ? "<b>todas</b> estas etiquetas (" + S.tags.length + ")" : "la etiqueta") + ":</span> " +
-      S.tags.map(function (id) { var t = tagDef(id); return '<span class="tag c-' + t.color + '">' + esc(t.label) + '<span class="x" data-untag="' + id + '" title="Quitar">✕</span></span>'; }).join("") +
-      ' <span class="muted small">→ ' + rows.length + " wallet" + (rows.length === 1 ? "" : "s") + '</span> <button class="clrtags right" id="clrTags">✕ Quitar filtros de etiquetas</button>';
+    var pill = function (id, kind) { var t = tagDef(id); return '<span class="tag ' + (kind === "exc" ? "tx-exc" : "tx-inc") + " c-" + t.color + '">' + (kind === "exc" ? "✕ " : "✓ ") + esc(t.label) + '<span class="x" data-untag="' + id + '" title="Quitar este filtro">✕</span></span>'; };
+    box.innerHTML = (S.tags.length ? '<span class="lbl">Con' + (S.tags.length > 1 ? " (todas)" : "") + ":</span> " + S.tags.map(function (id) { return pill(id, "inc"); }).join("") : "") +
+      (S.tags.length && S.xtags.length ? '<span class="lbl sep">·</span>' : "") +
+      (S.xtags.length ? '<span class="lbl">Sin:</span> ' + S.xtags.map(function (id) { return pill(id, "exc"); }).join("") : "") +
+      ' <span class="muted small">→ ' + pl(rows.length) + '</span> <button class="clrtags right" id="clrTags">✕ Quitar filtros de etiquetas</button>';
   }
   var COLS = [
     ["sel", '<input type="checkbox" class="selcb" id="selAll" title="Seleccionar todas las visibles">', "l"], ["fav", "⭐", "l"], ["i", "#", ""], ["a", "Wallet", "l"], ["x", "Ver en", "l"], ["c", "Chain", "l"], ["ct", "Coins", "l"], ["sc", "Score", ""], ["pn", "PnL nativo", ""], ["pu", "PnL USD", ""], ["roi", "ROI", ""],
@@ -479,7 +511,7 @@
       // actualización inmediata del panel (el box ya ha reescrito data.json y lo republicará)
       if (d.kind === "token") {
         D.tokens = D.tokens.filter(function (x) { return !(x.c === d.t.c && x.a === d.t.a); });
-        if (S.coin === d.t.c + ":" + d.t.a) { S.coin = ""; history.replaceState(null, "", location.pathname + location.search); }
+        if (S.coin === d.t.c + ":" + d.t.a) { S.coin = ""; writeHash(); }
       }
       var g = {}; gone.forEach(function (k) { g[k] = 1; delete S.sel[k]; delete FAVS[k]; delete ALIASES[k]; });
       D.wallets = D.wallets.filter(function (w) { return !g[key(w)]; }); D.wIdx = {}; D.wallets.forEach(function (w) { D.wIdx[key(w)] = w; });
@@ -959,7 +991,7 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
+    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,#noiseBtn,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
     if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
     if (t.dataset.csub) { CK.sub = t.dataset.csub; return renderConn(); }
     if (t.id === "ckGo") return submitCheck();
@@ -989,14 +1021,15 @@
     if (t.dataset.dl) return download(t.dataset.dl);
     if (t.id === "grpSave") return saveGroup();
     if (t.hasAttribute("data-mclose")) return closeModal();
-    if (t.dataset.untag) { e.stopPropagation(); S.tags = S.tags.filter(function (x) { return x !== t.dataset.untag; }); return renderAll(); }
-    if (t.id === "clrTags") { S.tags = []; return renderAll(); }
+    if (t.dataset.untag) { e.stopPropagation(); S.tags = S.tags.filter(function (x) { return x !== t.dataset.untag; }); S.xtags = S.xtags.filter(function (x) { return x !== t.dataset.untag; }); writeHash(); return renderAll(); }
+    if (t.id === "clrTags") { S.tags = []; S.xtags = []; writeHash(); return renderAll(); }
+    if (t.id === "noiseBtn") { toggleNoise(); S.limit = 300; writeHash(); return renderAll(); }
     if (t.dataset.tab) return goto(t.dataset.tab);
     if (t.dataset.goto) { e.preventDefault(); return goto(t.dataset.goto); }
     if (t.dataset.star) { e.stopPropagation(); return toggleFav(t.dataset.star); }
     if (t.dataset.copy) { e.stopPropagation(); return copy(t.dataset.copy); }
     if (t.dataset.sort) { if (t.dataset.sort === S.sort) S.asc = !S.asc; else { S.sort = t.dataset.sort; S.asc = ["a", "c", "ho", "en", "ft"].indexOf(S.sort) >= 0; } return renderAll(); }
-    if (t.dataset.tag) { var i = S.tags.indexOf(t.dataset.tag); if (i >= 0) S.tags.splice(i, 1); else S.tags.push(t.dataset.tag); return renderAll(); }
+    if (t.dataset.tag) { if (Date.now() - LP_AT < 900) return; cycleTag(t.dataset.tag); S.limit = 300; writeHash(); return renderAll(); }
     if (t.dataset.open) { e.preventDefault(); return openWallet(t.dataset.open); }
     if (t.hasAttribute("data-close")) return $("drawer").classList.add("hide");
     if (t.hasAttribute("data-coin")) { e.preventDefault(); e.stopPropagation(); $("drawer").classList.add("hide"); var kc = t.dataset.coin; if (kc) { S.tab = "wallets"; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === "wallets"); }); window.scrollTo(0, 0); } return setCoin(kc); }
@@ -1011,7 +1044,7 @@
       var body = { alerts: { enabled: $("alEn").checked, min_inflow_usd: +$("alUsd").value || 0, only_from_funder_or_cex: $("alOnly").checked, poll_minutes: +$("alMin").value || 5, min_inflow_native: { solana: +$("alSol").value || 0 } } };
       return api("/api/settings", body).then(function (r) { S.alerts = r.alerts; toast("Alertas guardadas"); }).catch(function (er) { toast(esc(er.message)); });
     }
-    if (t.id === "fClear") { ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund"].forEach(function (id) { $(id).value = ""; }); $("fGroup").value = ""; $("fAct").value = ""; $("fFav").checked = false; $("fHide").checked = false; $("fFresh").checked = false; S.tags = []; return renderAll(); }
+    if (t.id === "fClear") { ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund"].forEach(function (id) { $(id).value = ""; }); $("fGroup").value = ""; $("fAct").value = ""; $("fFav").checked = false; $("fHide").checked = false; $("fFresh").checked = false; S.tags = []; S.xtags = []; writeHash(); return renderAll(); }
     if (t.id === "moreBtn") { S.limit += 300; return renderAll(); }
     if (t.dataset.k) return openWallet(t.dataset.k);
   });
@@ -1020,10 +1053,12 @@
   $("coinSel").addEventListener("change", function () { setCoin(this.value); });
   window.addEventListener("hashchange", function () { readHash(); renderAll(); });
   // tooltips (ratón y pulsación larga en móvil)
-  var tip = $("tip"), lp;
+  var tip = $("tip"), lp, LP_AT = 0;
   function showTip(el, x, y) { var h = el.getAttribute("data-tip"); if (!h) return; tip.textContent = h; tip.classList.remove("hide"); var r = tip.getBoundingClientRect(); tip.style.left = Math.min(x + 12, innerWidth - r.width - 8) + "px"; tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px"; }
   document.addEventListener("mouseover", function (e) { var el = e.target.closest("[data-tip]"); if (el) showTip(el, e.clientX, e.clientY); else tip.classList.add("hide"); });
-  document.addEventListener("touchstart", function (e) { var el = e.target.closest("[data-tip]"); if (!el) { tip.classList.add("hide"); return; } var t0 = e.touches[0]; lp = setTimeout(function () { showTip(el, t0.clientX, t0.clientY); }, 450); }, { passive: true });
+  document.addEventListener("touchstart", function (e) { var el = e.target.closest("[data-tip]"); if (!el) { tip.classList.add("hide"); return; } var t0 = e.touches[0]; clearTimeout(lp); lp = setTimeout(function () { LP_AT = Date.now(); showTip(el, t0.clientX, t0.clientY); }, 450); }, { passive: true });
+  document.addEventListener("touchmove", function () { clearTimeout(lp); }, { passive: true });
+  document.addEventListener("contextmenu", function (e) { if (e.target.closest && e.target.closest(".chip")) e.preventDefault(); });
   document.addEventListener("touchend", function () { clearTimeout(lp); setTimeout(function () { tip.classList.add("hide"); }, 2500); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") { if (CK.sel && $("modal").classList.contains("hide") && $("drawer").classList.contains("hide")) ckSelect(null); $("drawer").classList.add("hide"); closeModal(); } if (e.key === "Enter" && e.target && e.target.id === "delPin") runDelete(); if (e.key === "Enter" && e.target && e.target.id === "ckPin") submitCheck(); });
   $("modal").addEventListener("input", updateExport);
@@ -1040,9 +1075,14 @@
   function readHash() {
     var h = decodeURIComponent(location.hash.slice(1));
     if (!h) return;
-    if (h.indexOf("coin=") === 0) {
-      var ca = h.slice(5).trim(), cur = coinTok();
-      if (!cur || (cur.a !== ca && cur.a.toLowerCase() !== ca.toLowerCase())) { S.coin = ""; S.pendingCoin = ca; resolvePendingCoin(); }
+    if (/(^|&)(coin|con|sin)=/.test(h)) {
+      var kv = {}; h.split("&").forEach(function (p) { var i = p.indexOf("="); if (i > 0) kv[p.slice(0, i)] = p.slice(i + 1); });
+      var list = function (v) { return (v || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean); };
+      if (kv.coin) {
+        var ca = kv.coin.trim(), cur = coinTok();
+        if (!cur || (cur.a !== ca && cur.a.toLowerCase() !== ca.toLowerCase())) { S.coin = ""; S.pendingCoin = ca; resolvePendingCoin(); }
+      } else { S.coin = ""; S.pendingCoin = null; }
+      S.tags = list(kv.con); S.xtags = list(kv.sin).filter(function (x) { return S.tags.indexOf(x) < 0; });
       if (S.tab !== "wallets" && S.tab !== "favs") S.tab = "wallets";
     } else if (h.indexOf("check=") === 0) { S.tab = "conn"; CK.sub = "check"; CK.prefill = { ws: parseWs(h.slice(6)), chain: "auto" }; }
     else if (h === "clusters") { S.tab = "conn"; CK.sub = "clusters"; }
