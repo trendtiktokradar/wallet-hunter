@@ -56,7 +56,8 @@
       <span class="muted" id="fCount"></span>
       <button class="primary right" data-goto="scan">+ Escanear token / añadir wallets</button>
     </div>
-    <div class="taghelp muted small">Etiquetas: haz clic para filtrar. Si marcas varias, solo se muestran las wallets que tienen <b>todas</b> a la vez (Y). El número de cada etiqueta es cuántas wallets de la lista actual la tienen; <span class="greyhint">en gris</span> las que darían 0 resultados con los filtros actuales. Pasa el ratón o mantén pulsado para ver qué significa cada una.</div>
+    <div class="tagbar"><button class="ghost noise" id="noiseBtn" data-tip="Oculta de un clic las wallets con Bot, Sniper, Miembro de bundle, One-hit wonder, Datos insuficientes o Una vez. Otro clic las vuelve a mostrar.">🧹 Quitar ruido</button>
+    <div class="taghelp muted small">Etiquetas: cada clic cambia el filtro → 1.º <b class="hl-inc">✓ con</b> (solo wallets que la tienen; si marcas varias, han de tener <b>todas</b>) · 2.º <b class="hl-exc">✕ sin</b> (oculta las que la tienen; basta con una para ocultarla) · 3.º quitar. El número es cuántas wallets de la lista actual la tienen (en las excluidas, cuántas oculta); <span class="greyhint">en gris</span> las que no cambian nada con los filtros actuales. Pasa el ratón o mantén pulsado para ver qué significa cada una. Los filtros se guardan en la URL.</div></div>
     <div id="tagSel" class="tagsel hide"></div>
     <div class="chips" id="chips"></div>
     <div id="favExtra" class="hide"></div>

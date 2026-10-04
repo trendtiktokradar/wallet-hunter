@@ -72,7 +72,7 @@ Si el box se reinicia hay que volver a lanzar `scripts/service.sh start` (igual 
 Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbrales de bundles/clusters, límites de cada API, alertas).
 
 ## Panel: filtros y grupos
-- **Etiquetas**: todas siempre visibles; las seleccionadas resaltadas (✓), las que darían 0 resultados en gris; el número es cuántas wallets de la lista actual la tienen. Varias etiquetas = deben cumplirse todas (Y). «Quitar filtros de etiquetas» las limpia.
+- **Etiquetas (3 estados)**: cada clic cambia el filtro → 1.º **✓ con** (verde: la wallet debe tenerla; varias = todas, Y) · 2.º **✕ sin** (rojo y tachada: oculta las wallets que la tienen; basta con una) · 3.º quitar. El número es cuántas wallets de la lista actual la tienen (en las excluidas, cuántas oculta); en gris las que no cambian nada. La barra resume «Con: … · Sin: …» y cada una se quita con su ✕. **«🧹 Quitar ruido»** excluye de un clic Bot, Sniper, Miembro de bundle, One-hit wonder, Datos insuficientes y Una vez (otro clic lo deshace). En móvil, mantener pulsado muestra la ayuda sin cambiar el filtro. El estado va en la URL (`#con=rentable&sin=bot,sniper`, combinable con `coin=`).
 - **🌱 Wallet fresca**: primera transacción (o, si no se conoce, primer fondeo) hace ≤ 7 días.
 - **Trades**: compras + ventas en 30 días (columna ordenable y filtro «Trades ≥»). «Fondeada hace < X h» usa la última entrada nativa ≥ 0,1 SOL / 0,005 ETH (`recent_funding_min_native`).
 - **Enlaces**: Solscan/Etherscan/explorador de la chain + GMGN (sol, eth, bsc, base).
