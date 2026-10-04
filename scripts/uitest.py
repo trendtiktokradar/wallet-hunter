@@ -15,6 +15,28 @@ CONNECTS = []      # llamadas a /api/connect (simuladas)
 CHECKS = {}        # id -> nº de consultas de estado (pendiente → en curso → hecho)
 CK_STEPS = [("running", "leyendo historial 2/%d"), ("running", "2 saltos: fondeador de intermediarios 3/6"), ("running", "revisando puentes 2/3")]   # respuesta simulada de plan_token; None = el box no la da (el panel usa su estimación)
 
+SET = {"enabled": False, "min_inflow_usd": 5000, "min_inflow_native": {"solana": 20}, "only_from_funder_or_cex": False, "poll_minutes": 5,
+       "dormant_alert": True, "dormant_days": 7, "dormant_poll_minutes": 60, "funder_watch": False, "funder_poll_minutes": 15, "funder_new_max_txs": 5,
+       "funder_max": 20, "funder_min_native": {"solana": 1.0}}
+TG = {"token": True, "chat": False, "bot": "Test_bot", "chat_name": None, "chat_type": None, "last_detect": int(time.time()) - 40}
+TGOPS = []         # llamadas a /api/telegram (simuladas: no se manda nada)
+FAVSRV = []        # ⭐ en el «box» simulado
+FAVADDS = []       # altas de ⭐ con scan
+MOM = "MoMfundr" + "M" * 36
+KID = "NewKid11" + "K" * 36
+def fav_lt(i):     # 1ª ⭐: 10 días sin tradear; resto: 1 día
+    return int(time.time()) - (10 if i == 0 else 1) * 86400
+def augment(dd):
+    """Datos de prueba de smart money cruzado (con wallets reales del data.json)."""
+    ws, t0 = dd["wallets"], (dd["tokens"][0]["a"] if dd["tokens"] else "Tok")
+    F1, F2 = "FakeCoinOne" + "1" * 29 + "pump", "FakeCoinTwo" + "2" * 29 + "pump"
+    def co(t, r, pn): return {"t": t, "r": r, "pn": pn, "roi": pn / 1.5, "en": 40 + r * 10, "fb": int(time.time()) - 5 * 86400, "in": 1.5, "out": 1.5 + pn, "un": 0}
+    dd["smartx"] = [{"c": "solana", "a": ws[1]["a"], "n": 3, "ne": 3, "pn": 9.5, "inv": 4.5, "sc": ws[1]["sc"], "coins": [co(t0, 4, 5.0), co(F1, 9, 3.0), co(F2, 22, 1.5)]},
+                    {"c": "solana", "a": ws[0]["a"], "n": 2, "ne": 3, "pn": 4.2, "inv": 3, "sc": ws[0]["sc"], "coins": [co(t0, 2, 3.2), co(F1, 17, 1.0)]},
+                    {"c": "solana", "a": ws[2]["a"], "n": 2, "ne": 2, "pn": 1.1, "inv": 3, "sc": ws[2]["sc"], "coins": [co(F1, 30, 0.6), co(F2, 41, 0.5)]}]
+    dd["smartx_cfg"] = {"early_rank": 50, "min_coins": 2}
+    return dd
+
 async def fake_api(route):
     req = route.request
     body = json.loads(req.post_data or "{}")
@@ -48,7 +70,29 @@ async def fake_api(route):
             else:
                 out = {"ok": True, "id": cid, "status": "done", "progress": "terminado", "chain": CHECK["chain"], "wallets": CHECK["wallets"], "result": dict(CHECK, id=cid)}
     elif req.url.endswith("/api/favs"):
-        out = {"ok": True, "favs": []}
+        op, ch, a = body.get("op"), body.get("chain"), body.get("address")
+        if op == "add" and not any(f["address"] == a for f in FAVSRV):
+            FAVSRV.append({"chain": ch, "address": a, "alias": body.get("alias"), "added": int(time.time())})
+            if body.get("scan"): FAVADDS.append(body)
+        elif op == "remove":
+            FAVSRV[:] = [f for f in FAVSRV if f["address"] != a]
+        out = {"ok": True, "dormant_days": SET["dormant_days"], "favs": [dict(f, last_trade=fav_lt(i), watched=True, funders=[{"address": MOM, "label": None}] if i == 0 else []) for i, f in enumerate(FAVSRV)]}
+    elif req.url.endswith("/api/settings"):
+        if body.get("alerts"): SET.update(body["alerts"])
+        fl = [{"chain": "solana", "address": MOM, "label": None, "children": [f["address"] for f in FAVSRV[:1]], "watch": True, "why": None},
+              {"chain": "solana", "address": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9", "label": "CEX Binance", "children": [f["address"] for f in FAVSRV[1:2]], "watch": False, "why": "exchange"}] if SET["funder_watch"] else []
+        out = {"ok": True, "alerts": SET, "telegram": TG, "funders": fl, "estimate": {"inflow": 0, "dormant": 125, "funder": 211 if SET["funder_watch"] else 0, "total": 125 + (211 if SET["funder_watch"] else 0),
+               "favorites": len(FAVSRV), "favorites_sol": len(FAVSRV), "funders": 1, "funders_sol": 1 if SET["funder_watch"] else 0, "first_time": 20, "assumptions": "supuestos de prueba"}}
+    elif req.url.endswith("/api/telegram"):
+        TGOPS.append(body.get("op"))
+        if body.get("op") == "detect": TG.update(chat=True, chat_name="Alex", chat_type="private")
+        out = {"ok": True, "found": TG["chat"], "telegram": TG}
+    elif req.url.endswith("/api/alerts"):
+        n = int(time.time()); w0 = FAVSRV[0]["address"] if FAVSRV else KID
+        out = {"ok": True, "alerts": [
+            {"ts": n - 600, "kind": "funder", "chain": "solana", "wallet": KID, "amount_native": 3.0, "amount_usd": 450, "sender": MOM, "sender_label": None, "tx": "funder:5xSig", "data": {"funder": MOM, "children": [w0], "txs": 1}},
+            {"ts": n - 3600, "kind": "dormant", "chain": "solana", "wallet": w0, "amount_native": None, "amount_usd": None, "sender": None, "sender_label": None, "tx": "dormant:x", "data": {"days": 10, "last_trade": n - 10 * 86400}},
+            {"ts": n - 7200, "kind": "inflow", "chain": "solana", "wallet": w0, "amount_native": 25.0, "amount_usd": 3750, "sender": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9", "sender_label": "CEX Binance", "tx": "abc", "data": {}}]}
     elif req.url.endswith("/api/delete"):
         DELS.append(body)
         if body.get("op") == "plan_token":
@@ -430,6 +474,91 @@ async def connect_tests(pg, D, tag, mobile):
     await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(200)
 
 
+async def smartx_tests(pg, D, tag, mobile):
+    def ok(cond, msg):
+        print(("OK   " if cond else "FAIL ") + msg)
+        if not cond: FAILS.append(msg)
+    await pg.evaluate("window.scrollTo(0,0)")
+    await pg.locator('#tabs button[data-tab="smartx"]').click(); await pg.wait_for_timeout(400)
+    ok(await pg.locator("#smartxBox").is_visible() and not await pg.locator("#tab-wallets").is_visible(), tag + "pestaña 🧠 Smart cruzado")
+    sx = (D or {}).get("smartx") or []
+    if sx:
+        rows = await pg.locator("#smartxBox table.sx tr").count() - 1
+        ok(rows == len(sx), tag + f"smart cruzado: {rows} filas (esperado {len(sx)})")
+        ok(await pg.locator("#smartxBox .sxc").count() == sum(len(r["coins"]) for r in sx), tag + "chips por coin (PnL · puesto · entrada)")
+        first = await pg.locator("#smartxBox table.sx tr").nth(1).inner_text()
+        ok("3" in first and "+9,50" in first, tag + "orden: más coins primero, PnL total " + first.split("\n")[0][:40])
+        await pg.locator('#smartxBox [data-export="smartx"]').click(); await pg.wait_for_timeout(300)
+        ok(len(json.loads(await pg.locator("#out-json").input_value())) == len(sx), tag + "exportar smart cruzado")
+        await pg.keyboard.press("Escape")
+        if SHOTS:
+            await pg.evaluate("document.getElementById('tip').classList.add('hide')")
+            await pg.screenshot(path=SHOTS + ("/mobile" if mobile else "/desktop") + "-smartx.png", full_page=not mobile)
+        # filtro de chain sin datos -> estado vacío explicativo
+        await pg.select_option("#chainSel", "ethereum"); await pg.wait_for_timeout(300)
+        t = await pg.locator("#smartxBox .empty").inner_text()
+        ok("al menos 2 coins" in t, tag + "estado vacío: explica que hacen falta 2+ coins")
+        await pg.select_option("#chainSel", ""); await pg.wait_for_timeout(300)
+    else:
+        t = await pg.locator("#smartxBox .empty").inner_text() if await pg.locator("#smartxBox .empty").count() else ""
+        ok("coins" in t, tag + "smart cruzado vacío con explicación: " + t[:70].replace("\n", " "))
+        if SHOTS:
+            await pg.screenshot(path=SHOTS + ("/mobile" if mobile else "/desktop") + "-smartx-vacio.png")
+    await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(300)
+
+async def favs_tests(pg, D, tag, mobile):
+    def ok(cond, msg):
+        print(("OK   " if cond else "FAIL ") + msg)
+        if not cond: FAILS.append(msg)
+    FAVSRV.clear(); FAVADDS.clear(); TGOPS.clear(); TG.update(chat=False, chat_name=None)
+    SET.update(dormant_days=7, funder_watch=False)
+    await pg.evaluate("window.scrollTo(0,0)")
+    keys = await pg.locator("#tbl tbody tr[data-k]").evaluate_all("els=>els.slice(0,2).map(e=>e.dataset.k)")
+    for k in keys:
+        await pg.locator(f'#tbl tbody tr[data-k="{k}"] [data-star]').click(); await pg.wait_for_timeout(400)
+    ok(len(FAVSRV) == 2, tag + f"⭐ guardadas en el box ({len(FAVSRV)})")
+    await pg.locator('#tabs button[data-tab="favs"]').click(); await pg.wait_for_timeout(1200)
+    ths = await pg.locator("#tbl thead th").all_inner_texts()
+    ok(any("Sin tradear" in h for h in ths), tag + "columna «💤 Sin tradear» en Mis wallets")
+    dz = await pg.locator("#tbl tbody .dz").all_inner_texts()
+    ok(sorted(x.strip() for x in dz) == ["1 d", "💤 10 d"], tag + "días sin tradear: " + ", ".join(dz))
+    ok(await pg.locator("#tbl tbody .dz.on").count() == 1, tag + "💤 en rojo solo la que pasa el umbral (7 d)")
+    await pg.locator("#favExtra").scroll_into_view_if_needed()
+    ok("Test_bot" in await pg.locator("#favExtra").inner_text() and await pg.locator("#tgDetect").is_visible(), tag + "Telegram: falta el chat + botón «Detectar chat»")
+    await pg.locator("#tgDetect").click(); await pg.wait_for_timeout(600)
+    ok(TGOPS[-1:] == ["detect"] and await pg.locator("#tgTest").is_visible(), tag + "chat detectado → botón «Enviar prueba»")
+    await pg.locator("#tgTest").click(); await pg.wait_for_timeout(600)
+    ok(TGOPS[-1:] == ["test"] and "prueba" in await pg.locator("#toast").inner_text(), tag + "enviar prueba (simulado)")
+    await pg.fill("#dzDays", "5"); await pg.locator("#fwEn").check(); await pg.fill("#fwSol", "2"); await pg.fill("#fwMin", "30")
+    await pg.locator("#alSave").click(); await pg.wait_for_timeout(800)
+    ok(SET["dormant_days"] == 5 and SET["funder_watch"] is True and SET["funder_min_native"]["solana"] == 2 and SET["funder_poll_minutes"] == 30, tag + "ajustes de dormidas y fondeadores guardados")
+    txt = await pg.locator("#favExtra").inner_text()
+    ok("👀 sí" in txt and "no: exchange" in txt, tag + "lista de fondeadores vigilados (y por qué no el exchange)")
+    ok("créditos/día" in txt, tag + "coste estimado en créditos/día")
+    ok(await pg.locator("#tbl tbody .dz.on").count() == 1, tag + "umbral nuevo aplicado a la columna")
+    ok(await pg.locator("#alList").inner_text() != "" and await pg.locator("#alList [data-addfav]").count() == 1, tag + "alertas por tipo + «⭐ Añadir» en la de fondeador")
+    hrefs = await pg.locator("#alList a.xl").evaluate_all("els=>els.map(e=>e.href)")
+    ok(any("gmgn.ai" in h for h in hrefs) and any("solscan.io/tx/5xSig" in h for h in hrefs), tag + "alerta de fondeador con Solscan/GMGN/tx")
+    if SHOTS:
+        await pg.evaluate("document.getElementById('tip').classList.add('hide')")
+        await pg.evaluate("document.querySelector('.top').style.position='static'")
+        await pg.locator("#favExtra").screenshot(path=SHOTS + ("/mobile" if mobile else "/desktop") + "-alertas.png")
+        await pg.evaluate("document.querySelector('.top').style.position=''")
+        await pg.evaluate("window.scrollTo(0,0)"); await pg.screenshot(path=SHOTS + ("/mobile" if mobile else "/desktop") + "-mis-wallets.png")
+    pg.once("dialog", lambda d: asyncio.ensure_future(d.accept()))
+    await pg.locator("#alList [data-addfav]").click(); await pg.wait_for_timeout(800)
+    ok(FAVADDS and FAVADDS[-1]["address"] == KID and FAVADDS[-1]["scan"] is True, tag + "⭐ Añadir desde la alerta (+ análisis en cola)")
+    k2 = "NewKid22" + "Q" * 36
+    pg.once("dialog", lambda d: asyncio.ensure_future(d.accept()))
+    await pg.evaluate(f"location.hash='#addfav=solana:{k2}'"); await pg.wait_for_timeout(1200)
+    ok(FAVADDS and FAVADDS[-1]["address"] == k2, tag + "enlace #addfav= de Telegram añade la ⭐")
+    ok(await pg.evaluate("location.hash") == "#favs", tag + "el hash se limpia tras añadir")
+    # limpiar: quitar las ⭐ de la prueba
+    for a in [f["address"] for f in list(FAVSRV)]:
+        await pg.evaluate("(k)=>{var s=JSON.parse(localStorage.getItem('wh_favs')||'{}');delete s[k];localStorage.setItem('wh_favs',JSON.stringify(s));}", "solana:" + a)
+    FAVSRV.clear(); SET.update(dormant_days=7, funder_watch=False)
+    await pg.evaluate("location.hash=''"); await pg.goto(URL, wait_until="networkidle"); await pg.wait_for_timeout(2500)
+
 async def main():
     global SHOTS
     SHOTS = shots
@@ -451,7 +580,7 @@ async def main():
                     else:
                         dd = json.load(open(os.environ.get("UITEST_DATA", "/tmp/whweb/data.json"), encoding="utf-8"))
                         dd.setdefault("jobs", []).insert(0, {"id": "old1", "created": int(time.time()) - 3600, "kind": "connect", "chain": "solana", "items": [w[:4] + "…" + w[-4:] for w in CHECK["wallets"]], "status": "done", "progress": "terminado", "message": "%d wallets (Solana)" % len(CHECK["wallets"]), "started": int(time.time()) - 3600, "finished": int(time.time()) - 3550, "origin": "web"})
-                        body = json.dumps(dd)
+                        body = json.dumps(augment(dd))
                     await route.fulfill(status=200, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"}, body=body)
                 await ctx.route("http://127.0.0.1:18795/**", fake_box)
             pg = await ctx.new_page()
@@ -464,6 +593,7 @@ async def main():
                 D = await pg.evaluate("fetch(window.WH_CONFIG.dataUrl+'?t='+Date.now()).then(r=>r.json()).catch(()=>null)")
             if D and not D["wallets"]:
                 D = None
+            if D and NO_BOX: augment(D)
             ntags = await pg.locator("#chips .chip").count()
             total_tags = len(D["tags"]) if D else ntags
             ok(ntags == total_tags and ntags > 0, tag + f"todas las etiquetas visibles ({ntags}/{total_tags})")
@@ -585,6 +715,8 @@ async def main():
                     await pg.evaluate("document.getElementById('tip').classList.add('hide')"); await pg.screenshot(path=shots + "/mobile-export.png")
                 await pg.keyboard.press("Escape")
             await connect_tests(pg, D, tag, mobile)
+            await smartx_tests(pg, D, tag, mobile)
+            if D and NO_BOX: await favs_tests(pg, D, tag, mobile)
             if D and len(D["tokens"]) >= 1:
                 await coin_tests(pg, D, tag, mobile)
             if D and not mobile and shots:

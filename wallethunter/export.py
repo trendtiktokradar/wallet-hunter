@@ -2,7 +2,7 @@
 import json, os, time
 from .config import DATA_JSON, cfg
 from .chains import CHAINS
-from . import db, market
+from . import db, market, smartx
 from .net import STATUS
 from .tags import tag_defs
 
@@ -25,6 +25,7 @@ def build(c=None):
         coins.setdefault((r[0], r[1]), set()).add(r[2])
     for r in c.execute("SELECT DISTINCT s.chain, s.wallet, s.token FROM swaps s JOIN tokens t ON t.chain=s.chain AND t.address=s.token"):
         coins.setdefault((r[0], r[1]), set()).add(r[2])
+    lasttrade = {(r[0], r[1]): r[2] for r in c.execute("SELECT chain, wallet, MAX(ts) FROM swaps GROUP BY chain, wallet")}
     for r in c.execute("SELECT * FROM wallets ORDER BY score DESC NULLS LAST"):
         m = json.loads(r["metrics"]) if r["metrics"] else {}
         wallets.append({
@@ -37,7 +38,7 @@ def build(c=None):
             "fu": r["funder"], "fl": r["funder_label"], "or": json.loads(r["origins"]) if r["origins"] else [],
             "cp": m.get("copy_of"), "lk": m.get("links") or [], "er": m.get("early_rank_min"), "pf": r["prefiltered"],
             "ht": r["history_truncated"], "ls": r["last_scanned"],
-            "ct": sorted(coins.get((r["chain"], r["address"]), set()) | set(json.loads(r["origins"]) if r["origins"] else [])), "fa": r["funded_at"], "lf": lastfund.get((r["chain"], r["address"])),
+            "ct": sorted(coins.get((r["chain"], r["address"]), set()) | set(json.loads(r["origins"]) if r["origins"] else [])), "fa": r["funded_at"], "lf": lastfund.get((r["chain"], r["address"])), "lx": lasttrade.get((r["chain"], r["address"])),
         })
     tokens = []
     for r in c.execute("SELECT * FROM tokens ORDER BY scanned_at DESC"):
@@ -61,6 +62,10 @@ def build(c=None):
     for r in c.execute("""SELECT chain, wallet, COUNT(*) n, GROUP_CONCAT(token) toks, AVG(rank) ar FROM token_buyers
                           WHERE kind='early' AND rank<=50 GROUP BY chain, wallet HAVING n>=2 ORDER BY n DESC, ar ASC LIMIT 500"""):
         cross.append({"c": r["chain"], "a": r["wallet"], "n": r["n"], "t": r["toks"].split(","), "ar": _r(r["ar"], 1)})
+    try:
+        sx = smartx.build(c)
+    except Exception:
+        import logging; logging.getLogger("wh").exception("smart money cruzado"); sx = []
     jobs = [dict(r) for r in c.execute("SELECT id, created, kind, chain, items, status, progress, message, started, finished, origin FROM jobs ORDER BY created DESC LIMIT 60")]
     for j in jobs:
         j["items"] = json.loads(j["items"] or "[]")
@@ -80,7 +85,7 @@ def build(c=None):
     srcs = {k: {kk: v.get(kk) for kk in ("ok", "last", "last_ok", "error", "credits_month", "calls_day", "gtfa", "configured")} for k, v in STATUS.data.items()}
     box = db.kv_get(c, "box", {})
     return {"generated": now, "version": 1, "window_days": cfg()["window_days"], "stats": st, "wallets": wallets, "tokens": tokens,
-            "bundles": bundles, "clusters": clusters, "cross": cross, "jobs": jobs, "sources": srcs, "prices": prices,
+            "bundles": bundles, "clusters": clusters, "cross": cross, "smartx": sx, "smartx_cfg": {k: smartx.conf()[k] for k in ("early_rank", "min_coins")}, "jobs": jobs, "sources": srcs, "prices": prices,
             "tags": tag_defs(), "chains": {k: {"name": v["name"], "native": v["native"], "explorer": v["explorer"], "exn": v.get("explorer_name"), "gmgn": v.get("gmgn"), "tx": v["tx"]} for k, v in CHAINS.items()},
             "box": {"url": box.get("url"), "updated": box.get("updated"), "pin_set": box.get("pin_set", False)},
             "keys": key_status()}

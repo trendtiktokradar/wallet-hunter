@@ -252,3 +252,18 @@ button.noise.on{border-color:#f87171;background:#3b1220;color:#fecdd3}
 .tag.tx-exc .x{text-decoration:none;display:inline-block}
 .tagsel .lbl.sep{opacity:.6}
 @media (max-width:760px){.tagbar{flex-direction:column}}
+/* smart money cruzado, dormidas, vigilancia */
+.sxc{display:inline-flex;gap:4px;align-items:center;background:#13233d;border:1px solid #24406a;border-radius:6px;padding:1px 6px;margin:1px 3px 1px 0;font-size:12px;cursor:pointer;white-space:nowrap}
+.sxc.cur{border-color:#38bdf8}
+.list.sx td{vertical-align:middle}
+.empty{padding:14px;border:1px dashed #2b4166;border-radius:8px;color:var(--mut);line-height:1.6}
+.dz{font-variant-numeric:tabular-nums}
+.dz.on{color:#f87171;font-weight:600}
+.favx h4{margin:14px 0 6px;font-size:13px;color:#cbd5e1}
+.favx .row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.list.fw{margin-top:4px}
+.favx .note{margin-top:10px}
+.favx .chk{white-space:normal;align-items:flex-start}
+.favx .chk input{margin-top:3px}
+#alList{overflow-wrap:anywhere;line-height:1.7}
+@media (max-width:700px){.favx .list.fw{font-size:11px}.favx .list.fw td{padding:5px 4px}}

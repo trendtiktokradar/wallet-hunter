@@ -121,11 +121,31 @@ Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbral
 - Etiquetas de entidades: hoy la lista de exchanges de `cex.py`. Hay un enchufe `ArkhamLabels` (desactivado) para añadir
   Arkham si hay `ARKHAM_API_KEY`: basta con implementar `_fetch` y ponerlo en `implemented = True`.
 
-## Alertas de Telegram (apagadas por defecto)
-Se activan desde la pestaña ⭐ Mis wallets. Vigilan las ⭐ cada N minutos y avisan cuando les entra ≥ X $ (o ≥ X SOL),
-opcionalmente solo si viene de un exchange, de un fondeador conocido o de otra wallet de la base.
-Sin `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` se guardan y se ven en el panel, pero no se envían.
-Coste Helius: 1 crédito por wallet y pasada (+100 si hay transacciones nuevas).
+## 🧠 Smart money cruzado (pestaña «🧠 Smart cruzado»)
+Wallets que fueron **compradoras tempranas** (top 50 de compradores, `smartx.early_rank`) **y rentables** (PnL > 0 en esa coin,
+realizado + no realizado) en **2 o más coins escaneados** de la misma chain (`smartx.min_coins`). Se quitan bots, snipers,
+miembros de bundles y wallets sin analizar o prefiltradas. Orden: nº de coins y luego PnL total. Respeta los filtros de chain
+y coin, y se exporta como grupo (Axiom/GMGN/CSV). Se calcula en el box con los datos ya guardados: **0 créditos**.
+Con menos de 2 coins escaneados de una chain la pestaña lo explica.
+
+## Vigilancia de tus ⭐ y alertas de Telegram
+Un solo vigilante en el box (hilo propio) con tres alertas, todas configurables en ⭐ Mis wallets:
+1. **Entradas grandes** de dinero (apagada por defecto): avisa si a una ⭐ le entra ≥ X $ (o ≥ X SOL), opcionalmente solo si
+   viene de un exchange, de un fondeador conocido o de otra wallet de la base.
+2. **💤 Wallets dormidas** (encendida, revisión cada hora): días sin tradear de cada ⭐ (columna «💤 Sin tradear», en rojo al
+   pasar el umbral, 7 días por defecto) y un aviso cuando lo pasa, **una vez por racha** (si vuelve a tradear y se para, avisa otra vez).
+3. **👩‍👧 Fondeadores / wallets madre** (apagada por defecto): vigila a quien fondeó a tus ⭐ (no a exchanges ni infraestructura;
+   tope de 20) y avisa si envía ≥ X SOL a una wallet **nueva** (≤ 5 tx), con enlaces a Solscan/GMGN/tx y un enlace
+   `#addfav=chain:dirección` que la añade a Mis wallets (y la analiza) con un toque.
+
+**Telegram**: basta con `TELEGRAM_BOT_TOKEN` en el entorno del box. El chat se **detecta solo**: abre el bot, pulsa *Iniciar*
+(o escríbele algo) y el box lo encuentra con `getUpdates` (reintenta cada minuto) y lo guarda en la base; también hay un botón
+«Detectar chat» y otro «📨 Enviar prueba». `TELEGRAM_CHAT_ID` sigue funcionando si quieres fijarlo a mano.
+
+**Coste Helius (Solana)**, que el panel calcula con tus ajustes: 1 crédito por wallet y pasada (getSignaturesForAddress) + 10 si
+hay actividad nueva (getTransactionsForAddress / getTransfersByAddress) + 1 por receptor a comprobar. Con los valores por defecto
+(dormidas cada hora) ≈ 24 × N × 2,5 créditos/día para N ⭐ de Solana; fondeadores cada 15 min ≈ 96 × F × 2,2 por fondeador.
+La primera vez que se vigila una ⭐ se leen sus últimas 100 tx (10 créditos). EVM usa Etherscan (sin créditos).
 
 ## Privacidad
 Los datos (wallets, tokens, trabajos) se publican en un repo **público** como TikTok Radar. Los ⭐, alias, ajustes y alertas

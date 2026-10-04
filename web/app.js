@@ -94,10 +94,18 @@
     if (!p) return false;
     PIN = p.trim(); localStorage.setItem("wh_pin", PIN); return true;
   }
-  function syncFavs(op, w, alias) {
+  var FAVX = {}, DORM = 7;   // último trade y fondeadores de tus ⭐ (del box, con PIN); días para «dormida»
+  function lastTrade(w) { var x = FAVX[w.c + ":" + w.a], a = x && x.lt, b = w.lx; return a && b ? Math.max(a, b) : a || b || null; }
+  function dormCell(w) {
+    var lt = lastTrade(w); if (!lt) return '<span class="muted" data-tip="Sin trades registrados todavía">–</span>';
+    var d = Math.floor((NOW() - lt) / 86400), on = d >= DORM;
+    return '<span class="dz' + (on ? " on" : "") + '" data-tip="Último trade: ' + esc(fmtDate(lt)) + (on ? " · lleva " + d + " días sin tradear (umbral " + DORM + ")" : "") + '">' + (on ? "💤 " : "") + (d < 1 ? "hoy" : d + " d") + "</span>";
+  }
+  function syncFavs(op, w, alias, extra) {
     if (!BOX_OK || !PIN) return Promise.resolve();
-    return api("/api/favs", { op: op, chain: w ? w.c : null, address: w ? w.a : null, alias: alias }).then(function (r) {
-      var nf = {}; (r.favs || []).forEach(function (f) { nf[f.chain + ":" + f.address] = { alias: f.alias }; });
+    return api("/api/favs", Object.assign({ op: op, chain: w ? w.c : null, address: w ? w.a : null, alias: alias }, extra || {})).then(function (r) {
+      var nf = {}; (r.favs || []).forEach(function (f) { nf[f.chain + ":" + f.address] = { alias: f.alias }; FAVX[f.chain + ":" + f.address] = { lt: f.last_trade, funders: f.funders || [] }; });
+      if (r.dormant_days) DORM = r.dormant_days;
       // fusiona: los locales que no estén en el box se suben
       Object.keys(FAVS).forEach(function (k) { if (!nf[k] && op === "list") { var p = k.split(":"); api("/api/favs", { op: "add", chain: p[0], address: p[1], alias: FAVS[k].alias }); nf[k] = FAVS[k]; } });
       FAVS = nf; save("wh_favs", FAVS);
@@ -295,9 +303,11 @@
     ["ft", "Edad", ""], ["la", "Última act.", ""], ["cl", "Cluster / bundles", "l"], ["tg", "Etiquetas", "l"]
   ];
   var NOSORT = { x: 1, i: 1, sel: 1 };
-  var TIPS = { ct: "Coins escaneados en los que participó (comprador temprano o con trades del token). Clic para ver solo esa coin", sel: "Marca wallets para exportarlas como grupo (Axiom / GMGN / CSV)", i: "🌱 = wallet fresca: primera transacción (o primer fondeo) hace menos de 7 días", x: "Abrir la wallet en el explorador de la chain y en GMGN (si la chain está soportada)", tr: "Nº total de trades (compras + ventas) en los últimos 30 días. '≥' = historial truncado, como mínimo", a: "Dirección y alias (✎ para editarlo; se guarda en tu box con PIN y se puede buscar)", pn: "PnL realizado + no realizado de los últimos 30 días, en la moneda nativa de la chain (SOL, ETH, BNB…)", pu: "PnL nativo × precio actual (Kraken)", roi: "PnL ÷ total invertido en compras", wr: "% de tokens con beneficio (entre paréntesis, nº de tokens)", ho: "Mediana del tiempo entre la primera compra y la venta", en: "Mediana del tiempo desde el lanzamiento del token hasta su primera compra", sz: "Compra media en moneda nativa", bal: "Saldo nativo actual", ft: "Antigüedad de la wallet (primera transacción). '>' = historial demasiado largo, como mínimo", sc: "Score 0-100: win rate, PnL, ROI, consistencia, nº de tokens y entrada temprana; penaliza bots, bundles, insiders y rugs" };
+  function cols(onlyFavs) { if (!onlyFavs) return COLS; var i = COLS.findIndex(function (c) { return c[0] === "la"; }); return COLS.slice(0, i + 1).concat([["dz", "💤 Sin tradear", ""]], COLS.slice(i + 1)); }
+  var TIPS = { dz: "Días desde su último trade (compra o venta). 💤 en rojo = lleva más días que tu umbral de «dormida» (ajústalo abajo, en las alertas)", ct: "Coins escaneados en los que participó (comprador temprano o con trades del token). Clic para ver solo esa coin", sel: "Marca wallets para exportarlas como grupo (Axiom / GMGN / CSV)", i: "🌱 = wallet fresca: primera transacción (o primer fondeo) hace menos de 7 días", x: "Abrir la wallet en el explorador de la chain y en GMGN (si la chain está soportada)", tr: "Nº total de trades (compras + ventas) en los últimos 30 días. '≥' = historial truncado, como mínimo", a: "Dirección y alias (✎ para editarlo; se guarda en tu box con PIN y se puede buscar)", pn: "PnL realizado + no realizado de los últimos 30 días, en la moneda nativa de la chain (SOL, ETH, BNB…)", pu: "PnL nativo × precio actual (Kraken)", roi: "PnL ÷ total invertido en compras", wr: "% de tokens con beneficio (entre paréntesis, nº de tokens)", ho: "Mediana del tiempo entre la primera compra y la venta", en: "Mediana del tiempo desde el lanzamiento del token hasta su primera compra", sz: "Compra media en moneda nativa", bal: "Saldo nativo actual", ft: "Antigüedad de la wallet (primera transacción). '>' = historial demasiado largo, como mínimo", sc: "Score 0-100: win rate, PnL, ROI, consistencia, nº de tokens y entrada temprana; penaliza bots, bundles, insiders y rugs" };
   function sortVal(w, k) {
     if (k === "fav") return isFav(w) ? 1 : 0;
+    if (k === "dz") { var lt = lastTrade(w); return lt ? NOW() - lt : null; }
     if (k === "ft") return w.ft ? -w.ft : null;
     if (k === "cl") return (w.cl ? 1000 : 0) + (w.bu || []).length;
     if (k === "tg") return w.tg.length;
@@ -313,7 +323,8 @@
     var k = S.sort, asc = S.asc;
     rows.sort(function (a, b) { var x = sortVal(a, k), y = sortVal(b, k); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1); });
     $("fCount").textContent = rows.length + " de " + chainWallets().length;
-    var th = COLS.map(function (c) { return '<th class="' + c[2] + (S.sort === c[0] ? " sorted" + (S.asc ? " asc" : "") : "") + '"' + (NOSORT[c[0]] ? "" : ' data-sort="' + c[0] + '"') + (TIPS[c[0]] ? ' data-tip="' + esc(TIPS[c[0]]) + '"' : "") + ">" + c[1] + "</th>"; }).join("");
+    var CS = cols(onlyFavs);
+    var th = CS.map(function (c) { return '<th class="' + c[2] + (S.sort === c[0] ? " sorted" + (S.asc ? " asc" : "") : "") + '"' + (NOSORT[c[0]] ? "" : ' data-sort="' + c[0] + '"') + (TIPS[c[0]] ? ' data-tip="' + esc(TIPS[c[0]]) + '"' : "") + ">" + c[1] + "</th>"; }).join("");
     document.querySelector("#tbl thead").innerHTML = "<tr>" + th + "</tr>";
     var bIdx = {}; D.bundles.forEach(function (b, i) { bIdx[b.id] = i + 1; });
     S.visible = rows.slice(0, S.limit).map(key);
@@ -332,10 +343,10 @@
         "<td>" + signed(w.pn, 2) + "</td><td>" + usd(w.pu) + "</td><td>" + (w.roi == null ? "–" : signed(w.roi * 100, 0, "%")) + "</td>" +
         "<td>" + (w.wr == null ? "–" : Math.round(w.wr * 100) + '% <span class="mini">(' + w.tk + ")</span>") + "</td>" +
         "<td>" + (w.tk == null ? "–" : w.tk) + "</td><td>" + (w.tr == null ? "–" : (w.ht ? "≥" : "") + w.tr) + "</td><td>" + dur(w.ho) + "</td><td>" + dur(w.en) + "</td><td>" + num(w.sz) + "</td><td>" + num(w.bal) + "</td>" +
-        "<td>" + (w.ft ? (w.at ? "&gt;" : "") + dur(NOW() - w.ft) : "–") + "</td><td>" + ago(w.la) + "</td>" +
+        "<td>" + (w.ft ? (w.at ? "&gt;" : "") + dur(NOW() - w.ft) : "–") + "</td><td>" + ago(w.la) + "</td>" + (onlyFavs ? '<td class="nowrap">' + dormCell(w) + "</td>" : "") +
         '<td class="l">' + grp + '</td><td class="tags">' + tags + "</td></tr>";
     }).join("");
-    document.querySelector("#tbl tbody").innerHTML = html || '<tr><td colspan="' + COLS.length + '" class="l muted" style="padding:20px">No hay wallets con estos filtros. ' + (D.wallets.length ? "" : "Escanea un token en «Escanear / Añadir».") + "</td></tr>";
+    document.querySelector("#tbl tbody").innerHTML = html || '<tr><td colspan="' + CS.length + '" class="l muted" style="padding:20px">No hay wallets con estos filtros. ' + (D.wallets.length ? "" : "Escanea un token en «Escanear / Añadir».") + "</td></tr>";
     $("moreBtn").classList.toggle("hide", rows.length <= S.limit);
     var all = $("selAll"); if (all) all.checked = S.visible.length > 0 && S.visible.every(function (k) { return S.sel[k]; });
     renderSelBar();
@@ -370,6 +381,10 @@
       var R = CK.res; if (!R) return null;
       var extra = (R.bridges || []).filter(function (x) { return x.madre; }).map(function (x) { return x.address; }).filter(function (a) { return R.wallets.indexOf(a) < 0; });
       return { title: "Comprobación de conexiones" + (extra.length ? " (+ " + plural(extra.length, "wallet madre").replace("wallet madres", "wallets madre") + ")" : ""), source: "conexiones:" + (R.id || ""), name: "conexiones", emoji: "🔗", ws: R.wallets.concat(extra).map(function (a) { return { c: R.chain, a: a }; }) };
+    }
+    if (kind === "smartx") {
+      var sx = smartxRows();
+      return { title: "Smart money cruzado (" + sx.length + ")", source: "smartx", name: "smart cruzado", emoji: "🧠", ws: sx.map(function (r) { return { c: r.c, a: r.a }; }) };
     }
     if (kind === "btok") {
       var ch = p[1], tok = p.slice(2).join(":"), seen = {}, list = [];
@@ -632,22 +647,89 @@
     var el = $("favExtra");
     if (S.tab !== "favs") { el.classList.add("hide"); return; }
     el.classList.remove("hide");
-    var A = S.alerts;
-    el.innerHTML = '<div class="box"><h3>🔔 Alertas de Telegram: entradas grandes de dinero en tus ⭐</h3>' +
-      (A ? '<div class="row"><label class="chk"><input type="checkbox" id="alEn"' + (A.enabled ? " checked" : "") + "> Activadas</label>" +
-        '<label>Avisar si entra ≥ <input type="number" id="alUsd" value="' + esc(A.min_inflow_usd) + '" style="width:90px"> $</label>' +
-        '<label>o ≥ <input type="number" id="alSol" step="any" value="' + esc((A.min_inflow_native || {}).solana) + '" style="width:70px"> SOL</label>' +
-        '<label class="chk"><input type="checkbox" id="alOnly"' + (A.only_from_funder_or_cex ? " checked" : "") + "> Solo si viene de un exchange, un fondeador conocido o una wallet de la base</label>" +
-        '<label>Revisar cada <input type="number" id="alMin" value="' + esc(A.poll_minutes) + '" style="width:60px"> min</label>' +
-        '<button class="primary" id="alSave">Guardar</button></div>' + (S.telegram ? "" : '<div class="warnbox" style="margin-top:8px">Telegram aún no está conectado (falta el token del bot): las alertas se guardan en el box y se verán aquí, pero no llegan al móvil.</div>') +
-        '<div id="alList" class="small" style="margin-top:8px"></div>'
-        : '<div class="muted">Introduce tu PIN (pestaña Escanear) con el box encendido para ver y cambiar las alertas.</div> <button class="ghost" id="alLoad">Cargar ajustes</button>') + "</div>";
+    var A = S.alerts, T = S.telegram || {}, E = S.est, F = S.funders || [];
+    if (!A) { el.innerHTML = '<div class="box"><h3>🔔 Alertas y vigilancia de tus ⭐</h3><div class="muted">Introduce tu PIN (pestaña Escanear) con el box encendido para ver y cambiar las alertas.</div> <button class="ghost" id="alLoad">Cargar ajustes</button></div>'; return; }
+    var bl = T.bot ? '<a target="_blank" rel="noopener" href="https://t.me/' + esc(T.bot) + '">@' + esc(T.bot) + "</a>" : "el bot";
+    var tg = !T.token ? '<div class="warnbox">Telegram sin conectar: falta el token del bot en el box. Las alertas se guardan aquí, pero no llegan al móvil.</div>'
+      : !T.chat ? '<div class="warnbox">Bot ' + bl + " listo, pero aún no sé a qué chat escribir: ábrelo en Telegram y pulsa <b>Iniciar</b> (o escríbele cualquier cosa). El box lo detecta solo cada minuto" + (T.last_detect ? " (último intento " + ago(T.last_detect) + ")" : "") + '.</div><div class="row" style="margin-top:6px"><button class="ghost" id="tgDetect">🔍 Detectar chat ahora</button></div>'
+      : '<div class="row"><span class="pos">✅ Conectado a ' + bl + (T.chat_name ? " · chat de " + esc(T.chat_name) : "") + '</span><button class="ghost" id="tgTest">📨 Enviar prueba</button></div>';
+    var fl = F.length ? '<table class="list small fw"><tr><th>Fondeador</th><th>Fondeó a tus ⭐</th><th>¿Vigilado?</th></tr>' + F.map(function (f) {
+      return "<tr><td>" + walletLink(f.chain, f.address) + (f.label ? ' <span class="mini">' + esc(f.label) + "</span>" : "") + " " + exLinks({ c: f.chain, a: f.address }) + "</td><td>" + f.children.map(function (a) { return "⭐ " + walletLink(f.chain, a); }).join("<br>") + "</td><td>" + (f.watch ? '<span class="pos">👀 sí</span>' : '<span class="muted">no: ' + esc(f.why || "") + "</span>") + "</td></tr>";
+    }).join("") + "</table>" : '<div class="muted small">' + (A.funder_watch ? "Buscando los fondeadores de tus ⭐ (tarda un minuto tras activarlo)…" : "Actívalo para ver qué fondeadores se vigilarían.") + "</div>";
+    var est = E ? '<div class="note small">💳 Coste estimado (Helius, Solana): <b>~' + num(E.total, 0) + " créditos/día</b>" + (E.total ? " (entradas " + num(E.inflow, 0) + " · dormidas " + num(E.dormant, 0) + " · fondeadores " + num(E.funder, 0) + ")" : "") + " · " + E.favorites_sol + " ⭐ de Solana" + ", " + plural(E.funders_sol, "fondeador") + " vigilado" + (E.funders_sol === 1 ? "" : "s") + ". <span data-tip=\"" + esc(E.assumptions) + '">ⓘ</span></div>' : "";
+    el.innerHTML = '<div class="box favx"><h3>🔔 Alertas y vigilancia de tus ⭐</h3>' +
+      '<h4>📨 Telegram</h4>' + tg +
+      '<h4>🚨 Entradas grandes de dinero</h4><div class="row"><label class="chk"><input type="checkbox" id="alEn"' + (A.enabled ? " checked" : "") + "> Activadas</label>" +
+      '<label>Avisar si entra ≥ <input type="number" id="alUsd" value="' + esc(A.min_inflow_usd) + '" style="width:90px"> $</label>' +
+      '<label>o ≥ <input type="number" id="alSol" step="any" value="' + esc((A.min_inflow_native || {}).solana) + '" style="width:70px"> SOL</label>' +
+      '<label class="chk"><input type="checkbox" id="alOnly"' + (A.only_from_funder_or_cex ? " checked" : "") + "> Solo si viene de un exchange, un fondeador conocido o una wallet de la base</label>" +
+      '<label>Revisar cada <input type="number" id="alMin" value="' + esc(A.poll_minutes) + '" style="width:60px"> min</label></div>' +
+      '<h4>💤 Wallets dormidas</h4><div class="row"><label class="chk"><input type="checkbox" id="dzEn"' + (A.dormant_alert ? " checked" : "") + "> Avisarme cuando una ⭐ deje de tradear</label>" +
+      '<label>tras <input type="number" id="dzDays" min="1" max="365" value="' + esc(A.dormant_days) + '" style="width:60px"> días sin compras ni ventas</label><span class="muted small">Un aviso por racha: si vuelve a tradear y se vuelve a parar, te aviso otra vez.</span></div>' +
+      '<h4>👩‍👧 Fondeadores (wallets madre)</h4><div class="row"><label class="chk"><input type="checkbox" id="fwEn"' + (A.funder_watch ? " checked" : "") + "> Vigilar a quien fondeó a mis ⭐ y avisar si fondea una wallet NUEVA</label>" +
+      '<label>cada <input type="number" id="fwMin" min="10" max="240" value="' + esc(A.funder_poll_minutes) + '" style="width:60px"> min</label>' +
+      '<label>si envía ≥ <input type="number" id="fwSol" step="any" value="' + esc((A.funder_min_native || {}).solana) + '" style="width:70px"> SOL</label>' +
+      '<label>a una wallet con ≤ <input type="number" id="fwTx" min="1" max="50" value="' + esc(A.funder_new_max_txs) + '" style="width:55px"> tx</label></div>' +
+      '<div class="muted small" style="margin:4px 0">Los exchanges e infraestructura no se vigilan (fondean a miles). Tope: ' + esc(A.funder_max) + " fondeadores.</div>" + fl +
+      est + '<div class="row" style="margin-top:8px"><button class="primary" id="alSave">Guardar</button></div>' +
+      '<h4>Últimas alertas</h4><div id="alList" class="small"></div></div>';
+    renderAlertList();
   }
+  function alertRow(a) {
+    var d = a.data ? (typeof a.data === "string" ? JSON.parse(a.data) : a.data) : {};
+    if (a.kind === "dormant") return "💤 " + fmtDate(a.ts) + " · " + walletLink(a.chain, a.wallet) + " llevaba <b>" + esc(d.days) + " días</b> sin tradear (último trade " + esc(fmtDate(d.last_trade)) + ")";
+    if (a.kind === "funder") {
+      var k = a.chain + ":" + a.wallet, g = gmgn(a.chain, a.wallet);
+      return "👩‍👧 " + fmtDate(a.ts) + " · la madre " + walletLink(a.chain, a.sender) + (a.sender_label ? " (" + esc(a.sender_label) + ")" : "") + ", que fondeó a " + (d.children || []).map(function (x) { return "⭐ " + walletLink(a.chain, x); }).join(", ") +
+        ", envió <b>" + num(a.amount_native) + " " + nat(a.chain) + "</b> a una wallet nueva (" + esc(d.txs) + ' tx): <span class="addr">' + esc(short(a.wallet)) + "</span> " +
+        '<a class="xl" target="_blank" rel="noopener" href="' + esc(explorer(a.chain, a.wallet)) + '">' + esc(exName(a.chain)) + "</a>" + (g ? '<a class="xl" target="_blank" rel="noopener" href="' + esc(g) + '">GMGN</a>' : "") +
+        (a.tx && a.tx.indexOf("funder:") === 0 ? '<a class="xl" target="_blank" rel="noopener" href="' + esc(txUrl(a.chain, a.tx.slice(7))) + '">tx</a>' : "") +
+        (FAVS[k] ? ' <span class="pos">★ ya en Mis wallets</span>' : ' <button class="ghost" data-addfav="' + esc(k) + '">⭐ Añadir</button>');
+    }
+    return "🚨 " + fmtDate(a.ts) + " · " + walletLink(a.chain, a.wallet) + " recibió <b>" + num(a.amount_native) + " " + nat(a.chain) + "</b> (~$" + num(a.amount_usd, 0) + ") de " + esc(short(a.sender)) + (a.sender_label ? " · " + esc(a.sender_label) : "");
+  }
+  function renderAlertList() { var el = $("alList"); if (el && S.alertList) el.innerHTML = S.alertList.slice(0, 30).map(alertRow).join("<br>") || '<span class="muted">Sin alertas todavía.</span>'; }
+  function setSettings(r) { S.alerts = r.alerts; S.telegram = r.telegram; S.est = r.estimate; S.funders = r.funders; }
   function loadAlerts() {
     if (!needPin()) return;
-    api("/api/settings", {}).then(function (r) { S.alerts = r.alerts; S.telegram = r.telegram; renderFavExtra(); return api("/api/alerts", {}); })
-      .then(function (r) { if (!r) return; var el = $("alList"); if (el) el.innerHTML = (r.alerts || []).slice(0, 20).map(function (a) { return fmtDate(a.ts) + " · " + walletLink(a.chain, a.wallet) + " recibió <b>" + num(a.amount_native) + " " + nat(a.chain) + "</b> (~$" + num(a.amount_usd, 0) + ") de " + esc(short(a.sender)) + (a.sender_label ? " · " + esc(a.sender_label) : ""); }).join("<br>") || '<span class="muted">Sin alertas todavía.</span>'; })
+    syncFavs("list").then(function () { if (S.tab === "favs") renderTable(true); });
+    api("/api/settings", {}).then(function (r) { setSettings(r); renderFavExtra(); return api("/api/alerts", {}); })
+      .then(function (r) { if (!r) return; S.alertList = r.alerts || []; renderAlertList(); })
       .catch(function (e) { toast(esc(e.message)); });
+  }
+  function addFavFromAlert(k) {
+    if (!needPin()) return;
+    var p = splitKey(k); if (!p.c || !p.a) return;
+    if (!confirm("¿Añadir " + short(p.a) + " (" + chainName(p.c) + ") a ⭐ Mis wallets? También se analizará para que aparezca en la tabla.")) return;
+    FAVS[k] = { alias: null }; save("wh_favs", FAVS);
+    syncFavs("add", { c: p.c, a: p.a }, null, { scan: true }).then(function () { toast("⭐ Añadida · análisis en cola (míralo en Trabajos)"); setTimeout(loadData, 1500); renderAll(); });
+  }
+
+  // ---------------------------------------------------------------- smart money cruzado (calculado en el box, 0 créditos)
+  function smartxRows() {
+    var t = coinTok();
+    return (D.smartx || []).filter(function (r) { return t ? r.c === t.c && r.coins.some(function (x) { return x.t === t.a; }) : (!S.chain || r.c === S.chain); });
+  }
+  function renderSmartx() {
+    var C = D.smartx_cfg || { early_rank: 50, min_coins: 2 }, rows = smartxRows(), cur = coinTok(), byC = {};
+    D.tokens.forEach(function (t) { if (!S.chain || t.c === S.chain) byC[t.c] = (byC[t.c] || 0) + 1; });
+    var best = Math.max.apply(null, [0].concat(Object.keys(byC).map(function (c) { return byC[c]; })));
+    var h = '<div class="box"><h3>🧠 Smart money cruzado' + (rows.length ? " (" + rows.length + ")" : "") + (rows.length ? ' <button class="exp" data-export="smartx">📤 Exportar</button>' : "") + "</h3>" +
+      '<div class="muted small" style="margin-bottom:8px">Wallets que compraron <b>pronto</b> (entre los ' + C.early_rank + " primeros compradores) y además <b>ganaron dinero</b> en " + C.min_coins + " o más coins escaneados de la misma chain. Se quitan bots, snipers y bundles. Se calcula con los datos ya guardados: 0 créditos." + (cur ? " Filtrado por la coin " + esc(cur.sy || short(cur.a)) + "." : "") + "</div>";
+    if (!rows.length) {
+      h += '<div class="empty">' + (best < C.min_coins
+        ? "Para cruzar hace falta haber escaneado <b>al menos " + C.min_coins + " coins de la misma chain</b>" + (best ? " (ahora: " + best + ")" : "") + '. Escanea otra coin en la que creas que entró el mismo smart money y aquí saldrán las wallets que repiten. <br><button class="ghost" data-goto="scan">➕ Escanear otra coin</button>'
+        : "Ninguna wallet cumple todavía: ninguna fue compradora temprana <b>y</b> rentable en " + C.min_coins + "+ de tus coins" + (cur || S.chain ? " con este filtro" : "") + ". Prueba a escanear más coins del mismo estilo.") + "</div></div>";
+      $("smartxBox").innerHTML = h; return;
+    }
+    h += '<div style="overflow:auto"><table class="list sx"><tr><th>#</th><th>Wallet</th><th>Chain</th><th data-tip="Coins en los que fue temprana Y ganó / coins en los que fue temprana">Coins</th><th data-tip="Suma del PnL (realizado + no realizado) en esos coins">PnL total</th><th>Invertido</th><th>Por coin (PnL · puesto de compra · entrada)</th><th>Score</th><th>Etiquetas</th></tr>' +
+      rows.map(function (r, i) {
+        var k = r.c + ":" + r.a, w = D.wIdx[k] || { c: r.c, a: r.a, tg: [] };
+        var chips = r.coins.map(function (x) { return '<span class="sxc' + (cur && cur.a === x.t ? " cur" : "") + '" data-coin="' + esc(r.c + ":" + x.t) + '" data-tip="Comprador nº ' + x.r + " · invirtió " + num(x.in) + " " + nat(r.c) + (x.fb ? " · primera compra " + esc(fmtDate(x.fb)) : "") + (x.roi != null ? " · ROI " + Math.round(x.roi * 100) + "%" : "") + '"><b>' + esc(tokenSym(r.c, x.t)) + "</b> " + signed(x.pn, 2) + ' <span class="mini">#' + x.r + (x.en != null ? " · " + dur(x.en) : "") + "</span></span>"; }).join("");
+        var tags = (w.tg || []).slice(0, 5).map(function (t) { var d = tagDef(t); return '<span class="tag c-' + d.color + '" data-tip="' + esc(d.help) + '">' + esc(d.label) + "</span>"; }).join("");
+        return '<tr><td>' + (i + 1) + '</td><td class="nowrap"><button class="star ' + (FAVS[k] ? "on" : "") + '" data-star="' + esc(k) + '">' + (FAVS[k] ? "★" : "☆") + "</button> " + walletLink(r.c, r.a) + ' <button class="copy" data-copy="' + esc(r.a) + '" title="Copiar">📋</button> ' + exLinks(w) + "</td><td>" + esc(chainName(r.c)) + "</td><td><b>" + r.n + "</b>" + (r.ne > r.n ? '<span class="mini">/' + r.ne + "</span>" : "") + '</td><td class="nowrap">' + signed(r.pn, 2) + " " + esc(nat(r.c)) + "</td><td>" + num(r.inv) + "</td><td>" + chips + '</td><td><span class="score" style="background:' + scoreColor(r.sc) + '">' + (r.sc == null ? "–" : Math.round(r.sc)) + '</span></td><td class="tags">' + tags + "</td></tr>";
+      }).join("") + "</table></div></div>";
+    $("smartxBox").innerHTML = h;
   }
 
   // ---------------------------------------------------------------- comprobar conexiones entre wallets (trabajo 'connect' en el box, con PIN)
@@ -952,9 +1034,11 @@
     renderSources(); renderCards(); renderJobs();
     $("updated").textContent = "Datos: " + ago(D.generated) + (BOX_OK ? " · box en directo" : "");
     var t = S.tab;
-    ["wallets", "bundles", "tokens", "conn", "scan", "jobs"].forEach(function (x) { $("tab-" + x).classList.toggle("hide", !(x === t || (x === "wallets" && t === "favs"))); });
+    ["wallets", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].forEach(function (x) { $("tab-" + x).classList.toggle("hide", !(x === t || (x === "wallets" && t === "favs"))); });
     if (t === "wallets" || t === "favs") { renderFavExtra(); renderTable(t === "favs"); }
     if (t === "bundles") renderBundles();
+    if (t === "smartx") renderSmartx();
+    if (S.pendingAddFav) setTimeout(runPendingAddFav, 0);
     if (t === "tokens") renderTokens();
     if (t === "conn") renderConn();
     if (t === "scan" && !document.activeElement.closest("#scanBox")) renderScan();
@@ -991,7 +1075,7 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,#noiseBtn,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
+    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,#noiseBtn,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#tgDetect,#tgTest,[data-addfav],#fClear,#moreBtn,tr[data-k]");
     if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
     if (t.dataset.csub) { CK.sub = t.dataset.csub; return renderConn(); }
     if (t.id === "ckGo") return submitCheck();
@@ -1040,9 +1124,18 @@
     if (t.dataset.rescanToken) { var p = t.dataset.rescanToken.split(":"); return quickScan("tokens", p[0], p[1]); }
     if (t.id === "scanGo") return submitScan();
     if (t.id === "alLoad") return loadAlerts();
+    if (t.id === "tgDetect" || t.id === "tgTest") {
+      t.disabled = true;
+      return api("/api/telegram", { op: t.id === "tgTest" ? "test" : "detect" }).then(function (r) {
+        S.telegram = r.telegram; renderFavExtra();
+        toast(t.id === "tgTest" ? "📨 Mensaje de prueba enviado: míralo en Telegram" : r.found ? "✅ Chat detectado: ya puedes enviar una prueba" : "Aún no veo tu mensaje: abre el bot, pulsa Iniciar y vuelve a probar");
+      }).catch(function (er) { toast(esc(er.message)); }).then(function () { t.disabled = false; });
+    }
+    if (t.dataset.addfav) { e.stopPropagation(); return addFavFromAlert(t.dataset.addfav); }
     if (t.id === "alSave") {
-      var body = { alerts: { enabled: $("alEn").checked, min_inflow_usd: +$("alUsd").value || 0, only_from_funder_or_cex: $("alOnly").checked, poll_minutes: +$("alMin").value || 5, min_inflow_native: { solana: +$("alSol").value || 0 } } };
-      return api("/api/settings", body).then(function (r) { S.alerts = r.alerts; toast("Alertas guardadas"); }).catch(function (er) { toast(esc(er.message)); });
+      var body = { alerts: { enabled: $("alEn").checked, min_inflow_usd: +$("alUsd").value || 0, only_from_funder_or_cex: $("alOnly").checked, poll_minutes: +$("alMin").value || 5, min_inflow_native: { solana: +$("alSol").value || 0 },
+        dormant_alert: $("dzEn").checked, dormant_days: +$("dzDays").value || 7, funder_watch: $("fwEn").checked, funder_poll_minutes: +$("fwMin").value || 15, funder_new_max_txs: +$("fwTx").value || 5, funder_min_native: { solana: +$("fwSol").value || 0 } } };
+      return api("/api/settings", body).then(function (r) { setSettings(r); DORM = r.alerts.dormant_days || DORM; renderFavExtra(); renderTable(true); toast("Ajustes guardados"); if (r.alerts.funder_watch && !(r.funders || []).length) setTimeout(function () { if (S.tab === "favs") loadAlerts(); }, 20000); }).catch(function (er) { toast(esc(er.message)); });
     }
     if (t.id === "fClear") { ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund"].forEach(function (id) { $(id).value = ""; }); $("fGroup").value = ""; $("fAct").value = ""; $("fFav").checked = false; $("fHide").checked = false; $("fFresh").checked = false; S.tags = []; S.xtags = []; writeHash(); return renderAll(); }
     if (t.id === "moreBtn") { S.limit += 300; return renderAll(); }
@@ -1051,15 +1144,15 @@
   ["fSearch", "fScore", "fPnl", "fWr", "fTok", "fTrades", "fFund", "fGroup", "fAct", "fFav", "fHide", "fFresh"].forEach(function (id) { $(id).addEventListener("input", function () { S.limit = 300; renderAll(); }); });
   $("chainSel").addEventListener("change", function () { S.chain = this.value; var t = coinTok(); if (t && S.chain && t.c !== S.chain) return setCoin(""); renderAll(); });
   $("coinSel").addEventListener("change", function () { setCoin(this.value); });
-  window.addEventListener("hashchange", function () { readHash(); renderAll(); });
+  window.addEventListener("hashchange", function () { readHash(); if (S.pendingAddFav) goto("favs"); renderAll(); setTimeout(runPendingAddFav, 400); });
   // tooltips (ratón y pulsación larga en móvil)
-  var tip = $("tip"), lp, LP_AT = 0;
-  function showTip(el, x, y) { var h = el.getAttribute("data-tip"); if (!h) return; tip.textContent = h; tip.classList.remove("hide"); var r = tip.getBoundingClientRect(); tip.style.left = Math.min(x + 12, innerWidth - r.width - 8) + "px"; tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px"; }
+  var tip = $("tip"), lp, tipHide, LP_AT = 0;
+  function showTip(el, x, y) { clearTimeout(tipHide); var h = el.getAttribute("data-tip"); if (!h) return; tip.textContent = h; tip.classList.remove("hide"); var r = tip.getBoundingClientRect(); tip.style.left = Math.min(x + 12, innerWidth - r.width - 8) + "px"; tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px"; }
   document.addEventListener("mouseover", function (e) { var el = e.target.closest("[data-tip]"); if (el) showTip(el, e.clientX, e.clientY); else tip.classList.add("hide"); });
   document.addEventListener("touchstart", function (e) { var el = e.target.closest("[data-tip]"); if (!el) { tip.classList.add("hide"); return; } var t0 = e.touches[0]; clearTimeout(lp); lp = setTimeout(function () { LP_AT = Date.now(); showTip(el, t0.clientX, t0.clientY); }, 450); }, { passive: true });
   document.addEventListener("touchmove", function () { clearTimeout(lp); }, { passive: true });
   document.addEventListener("contextmenu", function (e) { if (e.target.closest && e.target.closest(".chip")) e.preventDefault(); });
-  document.addEventListener("touchend", function () { clearTimeout(lp); setTimeout(function () { tip.classList.add("hide"); }, 2500); });
+  document.addEventListener("touchend", function () { clearTimeout(lp); clearTimeout(tipHide); tipHide = setTimeout(function () { tip.classList.add("hide"); }, 2500); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") { if (CK.sel && $("modal").classList.contains("hide") && $("drawer").classList.contains("hide")) ckSelect(null); $("drawer").classList.add("hide"); closeModal(); } if (e.key === "Enter" && e.target && e.target.id === "delPin") runDelete(); if (e.key === "Enter" && e.target && e.target.id === "ckPin") submitCheck(); });
   $("modal").addEventListener("input", updateExport);
   window.addEventListener("resize", function () { if (CK.res && CK.dims !== ckDims().W) drawGraph(); });
@@ -1086,7 +1179,9 @@
       if (S.tab !== "wallets" && S.tab !== "favs") S.tab = "wallets";
     } else if (h.indexOf("check=") === 0) { S.tab = "conn"; CK.sub = "check"; CK.prefill = { ws: parseWs(h.slice(6)), chain: "auto" }; }
     else if (h === "clusters") { S.tab = "conn"; CK.sub = "clusters"; }
-    else if (["wallets", "favs", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
+    else if (h.indexOf("addfav=") === 0) { S.tab = "favs"; S.pendingAddFav = h.slice(7); }
+    else if (["wallets", "favs", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
   }
   if (location.hash) { readHash(); setTimeout(function () { goto(S.tab); }, 300); }
+  function runPendingAddFav() { var k = S.pendingAddFav; if (!k || !D) return; S.pendingAddFav = null; history.replaceState(null, "", location.pathname + location.search + "#favs"); if (FAVS[k]) { toast("Ya está en Mis wallets"); return; } addFavFromAlert(k); }
 })();

@@ -2,20 +2,22 @@
   GET  /health
   POST /api/check     {pin}
   POST /api/scan      {pin, kind: tokens|wallets, chain, items}
-  POST /api/favs      {pin, op: list|add|remove|alias, chain, address, alias}
+  POST /api/favs      {pin, op: list|add|remove|alias, chain, address, alias, scan?}  -> favs con last_trade y fondeadores (privado)
   POST /api/aliases   {pin, op: list|set, chain, address, alias}   (alias vacío = borrar)
   POST /api/groups    {pin, op: list|save|delete, group: {id?, name, emoji, chain, wallets[], source}, id}
   POST /api/delete    {pin, op: wallets|token|plan_token, items:[{chain,address}], chain, token, block}
   POST /api/connect   {pin, wallets, chain}                  -> {id}  (comprobación de conexiones: trabajo 'connect')
   POST /api/checks    {pin, op: list|get|status|delete, id}  (comprobaciones guardadas, privadas)
-  POST /api/settings  {pin, alerts?}      -> devuelve ajustes actuales
-  POST /api/alerts    {pin}               -> últimas alertas
+  POST /api/settings  {pin, alerts?}      -> ajustes actuales + estado de Telegram + coste estimado de la vigilancia + fondeadores
+  POST /api/telegram  {pin, op: status|detect|test}   (detecta tu chat con getUpdates; «test» manda un mensaje corto)
+  POST /api/alerts    {pin}               -> últimas alertas (kind: inflow | dormant | funder, data con los detalles)
 """
 import json, logging, os, re, subprocess, threading, time, urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from . import db, pin as pinmod, jobs
 from .config import cfg, save_settings, ROOT
 from .scan import parse_items
+from .chains import CHAINS as CHAINS_ALL
 
 log = logging.getLogger("wh")
 PORT = int(os.environ.get("WH_PORT", "18795"))
@@ -119,11 +121,21 @@ class H(BaseHTTPRequestHandler):
                               (ch, a, (req.get("alias") or None) and str(req.get("alias"))[:40], int(time.time())))
                     if req.get("alias"):
                         db.set_alias(c, ch, a, req.get("alias"))
+                    if req.get("scan") and ch in CHAINS_ALL and not c.execute("SELECT 1 FROM wallets WHERE chain=? AND address=?", (ch, a)).fetchone():
+                        jobs.enqueue(c, "wallets", ch, [a], origin="web"); WAKE.set()   # (p. ej. desde una alerta de fondeador: que salga en la tabla)
                 elif op == "remove" and ch and a:
                     c.execute("DELETE FROM favorites WHERE chain=? AND address=?", (ch, a))
                 c.commit()
+                from . import watcher
                 favs = [dict(r) for r in c.execute("SELECT chain, address, alias, added FROM favorites ORDER BY added DESC")]
-                return self._send(200, {"ok": True, "favs": favs})
+                fun = {}
+                for r in c.execute("SELECT chain, wallet, funder, label FROM fav_funders"):
+                    fun.setdefault((r[0], r[1]), []).append({"address": r[2], "label": r[3]})
+                for f in favs:   # último trade (dormidas) y fondeadores: privados, solo con PIN
+                    f["last_trade"] = watcher.last_trade(c, f["chain"], f["address"])
+                    f["watched"] = db.kv_get(c, f"watch:{f['chain']}:{f['address']}") is not None
+                    f["funders"] = fun.get((f["chain"], f["address"]), [])
+                return self._send(200, {"ok": True, "favs": favs, "dormant_days": watcher.settings()["dormant_days"]})
             if p == "/api/aliases":
                 if req.get("op") == "set":
                     ch, a = req.get("chain"), (req.get("address") or "").strip()
@@ -203,11 +215,39 @@ class H(BaseHTTPRequestHandler):
                     if a.get("watch") in ("favorites", "favorites+smart"): clean["watch"] = a["watch"]
                     if isinstance(a.get("min_inflow_native"), dict):
                         clean["min_inflow_native"] = {k: max(0.0, float(v)) for k, v in a["min_inflow_native"].items() if isinstance(v, (int, float))}
+                    if "dormant_alert" in a: clean["dormant_alert"] = bool(a["dormant_alert"])
+                    if "dormant_days" in a: clean["dormant_days"] = max(1, min(365, int(a["dormant_days"])))
+                    if "funder_watch" in a: clean["funder_watch"] = bool(a["funder_watch"])
+                    if "funder_poll_minutes" in a: clean["funder_poll_minutes"] = max(10, min(240, int(a["funder_poll_minutes"])))
+                    if "funder_new_max_txs" in a: clean["funder_new_max_txs"] = max(1, min(50, int(a["funder_new_max_txs"])))
+                    if isinstance(a.get("funder_min_native"), dict):
+                        clean["funder_min_native"] = {k: max(0.0, float(v)) for k, v in a["funder_min_native"].items() if isinstance(v, (int, float)) and k in CHAINS_ALL}
                     save_settings(clean)
-                from .config import secret
-                return self._send(200, {"ok": True, "alerts": cfg()["alerts"], "telegram": bool(secret("TELEGRAM_BOT_TOKEN") and secret("TELEGRAM_CHAT_ID"))})
+                    from . import watcher as _w
+                    _w.WAKE.set()
+                from . import watcher, telegram
+                return self._send(200, {"ok": True, "alerts": watcher.settings(), "telegram": telegram.status(), "estimate": watcher.estimate(c),
+                                        "funders": watcher.funder_list(c)})
+            if p == "/api/telegram":
+                from . import telegram
+                op = req.get("op", "status")
+                if op == "detect":
+                    ch = telegram.detect_chat()
+                    return self._send(200, {"ok": True, "found": bool(ch), "telegram": telegram.status()})
+                if op == "test":
+                    st = telegram.status()
+                    if not st["token"]:
+                        return self._send(400, {"error": "Falta el token del bot (TELEGRAM_BOT_TOKEN) en el box"})
+                    if not st["chat"] and not telegram.detect_chat():
+                        return self._send(400, {"error": "Aún no sé tu chat: abre el bot en Telegram, pulsa Start o escríbele algo y vuelve a probar"})
+                    ok = telegram.send("✅ Prueba de Wallet Hunter: las alertas llegarán a este chat.")
+                    return self._send(200 if ok else 502, {"ok": ok, "telegram": telegram.status()} if ok else {"error": "Telegram no aceptó el mensaje"})
+                return self._send(200, {"ok": True, "telegram": telegram.status()})
             if p == "/api/alerts":
                 rows = [dict(r) for r in c.execute("SELECT * FROM alerts ORDER BY ts DESC LIMIT 100")]
+                for r in rows:   # kind: inflow | dormant | funder ; data: detalles en JSON
+                    try: r["data"] = json.loads(r["data"]) if r.get("data") else None
+                    except ValueError: r["data"] = None
                 return self._send(200, {"ok": True, "alerts": rows})
         except ValueError as e:
             return self._send(400, {"error": str(e)})

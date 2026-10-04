@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS alerts(
 CREATE TABLE IF NOT EXISTS funders(
   chain TEXT, address TEXT, funder TEXT, funder_label TEXT, amount REAL, ts INTEGER, first_tx_ts INTEGER, checked INTEGER,
   PRIMARY KEY(chain, address));
+-- fondeadores (wallet madre) de cada ⭐, para vigilarlos
+CREATE TABLE IF NOT EXISTS fav_funders(chain TEXT, wallet TEXT, funder TEXT, label TEXT, source TEXT, ts INTEGER, PRIMARY KEY(chain, wallet, funder));
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 -- alias privados (como los favoritos: solo los sirve el box con PIN, no van al data.json público)
 -- grupos exportados/guardados desde la web (privados, con PIN): nombre + emoji + wallets
@@ -73,6 +75,11 @@ def connect(path=None):
         # migración: alias antiguos (columna wallets.alias / favoritos) -> tabla privada
         c.execute("INSERT OR IGNORE INTO aliases SELECT chain, address, alias, strftime('%s','now') FROM wallets WHERE alias IS NOT NULL AND alias<>''")
         c.execute("INSERT OR IGNORE INTO aliases SELECT chain, address, alias, added FROM favorites WHERE alias IS NOT NULL AND alias<>''")
+        for col in ("kind TEXT DEFAULT 'inflow'", "data TEXT"):     # alertas de varios tipos (entrada grande, dormida, fondeador)
+            try:
+                c.execute("ALTER TABLE alerts ADD COLUMN " + col)
+            except sqlite3.OperationalError:
+                pass
         c.commit()
         if not hasattr(_local, "conns"):
             _local.conns = {}

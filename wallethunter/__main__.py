@@ -37,7 +37,7 @@ def loop():
     if n:
         log.info("%s trabajos reanudados", n)
     server.start_server()
-    server.start_connect_worker()
+    server.start_connect_worker(); watcher.start_worker()
     tun = server.Tunnel() if os.environ.get("WH_TUNNEL", "1") == "1" else None
     last_pub, last_watch, last_sig = 0, 0, None
     from .pin import is_set
@@ -60,9 +60,6 @@ def loop():
                 jobs.run_job(c, job, on_progress=mid_publish)
                 export.write(c); publish(log); last_pub = time.time()
                 job = jobs.next_pending(c)
-            a = cfg()["alerts"]
-            if a.get("enabled") and time.time() - last_watch > a.get("poll_minutes", 5) * 60:
-                watcher.run(c); last_watch = time.time()
             STATUS.save()
             d = export.build(c)
             sig = json.dumps({k: v for k, v in d.items() if k not in ("generated", "sources", "prices")}, sort_keys=True)
