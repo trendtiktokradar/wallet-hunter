@@ -75,5 +75,25 @@
     "bsc": 0.02,
     "polygon": 5,
     "default": 0.005
+  },
+  "connect": {
+    "max_wallets": 10,
+    "max_txs_per_wallet": 1000,
+    "first_txs": 25,
+    "max_counterparties": 5,
+    "max_hop_lookups": 30,
+    "max_bridges_checked": 10,
+    "pair_pages": 2,
+    "min_native": {
+      "solana": 0.01,
+      "default": 0.002
+    },
+    "cobuy_window_s": 600,
+    "early_window_s": 3600,
+    "cex_time_window_min": 30,
+    "cex_amount_tolerance": 0.15,
+    "hub_min_txs": 1000,
+    "hub_hours": 168,
+    "max_nodes": 45
   }
 }

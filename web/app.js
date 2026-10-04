@@ -292,7 +292,7 @@
         '<td class="l"><input type="checkbox" class="selcb" data-sel="' + esc(key(w)) + '"' + (S.sel[key(w)] ? " checked" : "") + "></td>" +
         '<td class="l"><button class="star ' + (isFav(w) ? "on" : "") + '" data-star="' + esc(key(w)) + '">' + (isFav(w) ? "★" : "☆") + "</button></td>" +
         '<td class="nowrap">' + (i + 1) + (isFresh(w) ? '<span class="leaf" data-tip="' + esc(freshTip(w)) + '">🌱</span>' : "") + "</td>" +
-        '<td class="l">' + groupBadges(w) + '<span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button><button class="edit del" data-del="' + esc(key(w)) + '" title="Borrar wallet (PIN)">🗑</button></td>' +
+        '<td class="l">' + groupBadges(w) + '<span class="addr">' + (w.al ? '<b class="alias">' + esc(w.al) + "</b> " : "") + esc(short(w.a)) + '</span><button class="copy" data-copy="' + esc(w.a) + '" title="Copiar">📋</button><button class="edit" data-alias="' + esc(key(w)) + '" title="Editar alias (PIN)">✎</button><button class="edit" data-ck="' + esc(key(w)) + '" title="Comprobar conexiones de esta wallet (con sus vínculos)">🔗</button><button class="edit del" data-del="' + esc(key(w)) + '" title="Borrar wallet (PIN)">🗑</button></td>' +
         '<td class="l nowrap">' + exLinks(w) + "</td>" +
         '<td class="l"><span class="chainpill">' + esc(chainName(w.c)) + "</span></td>" +
         '<td class="l nowrap">' + coinChips(w, 3) + "</td>" +
@@ -313,7 +313,7 @@
   function renderSelBar() {
     var n = Object.keys(S.sel).length, el = $("selBar");
     el.classList.toggle("hide", !n);
-    if (n) el.innerHTML = "<b>" + n + "</b> wallet" + (n > 1 ? "s" : "") + ' seleccionada' + (n > 1 ? "s" : "") + ' <button class="exp" data-export="sel">📤 Exportar grupo</button> <button class="danger" data-delsel="1">🗑 Borrar seleccionadas</button> <button class="ghost" id="selClear">Quitar selección</button>';
+    if (n) el.innerHTML = "<b>" + n + "</b> wallet" + (n > 1 ? "s" : "") + ' seleccionada' + (n > 1 ? "s" : "") + ' <button class="exp" data-export="sel">📤 Exportar grupo</button> <button class="ghost" data-cksel="1" title="Comprobar conexiones entre las seleccionadas (máx. 10)">🔗 Comprobar conexiones</button> <button class="danger" data-delsel="1">🗑 Borrar seleccionadas</button> <button class="ghost" id="selClear">Quitar selección</button>';
   }
   var EMOJIS = ["🐸", "🧠", "🐋", "🎯", "👻", "🕵️", "🤖", "📦", "🕸️", "💀", "🔥", "⚡", "💎", "🚀", "🐀", "⭐"];
   var GMGN_CH = { solana: "sol", ethereum: "eth", bsc: "bsc", base: "base" };
@@ -333,6 +333,11 @@
     if (kind === "bundle") {
       var b = D.bundles[+p[1]]; if (!b) return null;
       return { title: "Bundle del slot/bloque " + b.s + " · " + tokenSym(b.c, b.t), source: "bundle:" + b.id, name: "bundle " + tokenSym(b.c, b.t), emoji: "📦", ws: b.w.map(function (a) { return { c: b.c, a: a }; }) };
+    }
+    if (kind === "check") {
+      var R = CK.res; if (!R) return null;
+      var extra = (R.bridges || []).filter(function (x) { return x.madre; }).map(function (x) { return x.address; }).filter(function (a) { return R.wallets.indexOf(a) < 0; });
+      return { title: "Comprobación de conexiones" + (extra.length ? " (+ " + plural(extra.length, "wallet madre").replace("wallet madres", "wallets madre") + ")" : ""), source: "conexiones:" + (R.id || ""), name: "conexiones", emoji: "🔗", ws: R.wallets.concat(extra).map(function (a) { return { c: R.chain, a: a }; }) };
     }
     if (kind === "btok") {
       var ch = p[1], tok = p.slice(2).join(":"), seen = {}, list = [];
@@ -495,7 +500,7 @@
     $("drawerIn").innerHTML = '<div class="row"><h3 style="margin:0">' + (w.al ? esc(w.al) + " · " : "") + '<span class="addr">' + esc(short(w.a)) + '</span></h3><button class="ghost right" data-close>✕</button></div>' +
       '<div class="mini addr" style="margin:6px 0;word-break:break-all">' + esc(w.a) + ' <button class="copy" data-copy="' + esc(w.a) + '">📋</button></div>' +
       '<div class="row small">' + exLinks(w) + (w.c === "solana" ? '<a class="xl" target="_blank" rel="noopener" href="https://app.axiom.trade/@' + esc(w.a) + '">Axiom</a>' : "") +
-      ' <button class="ghost" data-star="' + esc(k) + '">' + (isFav(w) ? "★ Quitar de Mis wallets" : "☆ Añadir a Mis wallets") + '</button> <button class="ghost" data-alias="' + esc(k) + '">✎ ' + (w.al ? "Cambiar alias" : "Poner alias") + '</button> <button class="ghost" data-rescan="' + esc(k) + '">Re-escanear</button> <button class="danger" data-del="' + esc(k) + '">🗑 Borrar wallet</button></div>' +
+      ' <button class="ghost" data-star="' + esc(k) + '">' + (isFav(w) ? "★ Quitar de Mis wallets" : "☆ Añadir a Mis wallets") + '</button> <button class="ghost" data-alias="' + esc(k) + '">✎ ' + (w.al ? "Cambiar alias" : "Poner alias") + '</button> <button class="ghost" data-rescan="' + esc(k) + '">Re-escanear</button> <button class="ghost" data-ck="' + esc(k) + '">🔗 Comprobar conexiones</button> <button class="danger" data-del="' + esc(k) + '">🗑 Borrar wallet</button></div>' +
       '<div style="margin:10px 0">' + tags + "</div>" +
       '<div class="kv">' +
       "<div>Chain</div><div>" + esc(chainName(w.c)) + "</div>" +
@@ -544,6 +549,8 @@
       }).join("") + "</table></div></div>";
   }
   function renderConn() {
+    renderConnSeg();
+    if (CK.sub === "check") { if (!CK.built) buildCheck(); applyCkPrefill(); return; }
     var ctc = coinTok(), wsetc = {}; if (ctc) chainWallets().forEach(function (w) { wsetc[w.a] = 1; });
     var cs = D.clusters.filter(function (c) { return ctc ? c.c === ctc.c && c.w.some(function (a) { return wsetc[a]; }) : (!S.chain || c.c === S.chain); });
     var cross = D.cross.filter(function (c) { return ctc ? c.c === ctc.c && c.t.indexOf(ctc.a) >= 0 : (!S.chain || c.c === S.chain); });
@@ -586,7 +593,7 @@
     $("jobsBox").innerHTML = '<div class="box"><h3>Trabajos</h3><div style="overflow:auto"><table class="list"><tr><th>Estado</th><th>Tipo</th><th>Chain</th><th>Direcciones</th><th>Progreso / resultado</th><th>Creado</th><th>Duración</th></tr>' +
       (js.map(function (j) {
         var d = j.finished && j.started ? dur(j.finished - j.started) : j.started ? dur(NOW() - j.started) + "…" : "–";
-        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
+        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : j.kind === "connect" ? "🔗 Conexiones" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-coin="' + esc(t.c + ":" + t.a) + '">👛 Ver wallets' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + (j.kind === "connect" && j.status !== "error" ? ' <button class="ghost" data-ckjob="' + esc(j.id) + '">🔗 ' + (j.status === "done" ? "Ver resultado" : "Ver progreso") + "</button>" : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
       }).join("") || '<tr><td colspan="7" class="muted">Sin trabajos todavía.</td></tr>') + "</table></div></div>";
   }
   function renderFavExtra() {
@@ -610,6 +617,301 @@
       .then(function (r) { if (!r) return; var el = $("alList"); if (el) el.innerHTML = (r.alerts || []).slice(0, 20).map(function (a) { return fmtDate(a.ts) + " · " + walletLink(a.chain, a.wallet) + " recibió <b>" + num(a.amount_native) + " " + nat(a.chain) + "</b> (~$" + num(a.amount_usd, 0) + ") de " + esc(short(a.sender)) + (a.sender_label ? " · " + esc(a.sender_label) : ""); }).join("<br>") || '<span class="muted">Sin alertas todavía.</span>'; })
       .catch(function (e) { toast(esc(e.message)); });
   }
+
+  // ---------------------------------------------------------------- comprobar conexiones entre wallets (trabajo 'connect' en el box, con PIN)
+  var CK = { sub: "check", built: false, poll: null, job: null, res: null, list: null, sel: null, prefill: null, pos: null };
+  var ETYPE = {
+    transfer: { c: "#38bdf8", n: "Transferencia directa", dir: 1 },
+    fee: { c: "#f472b6", n: "Pagó la comisión (fee payer)", dir: 1 },
+    first: { c: "#4ade80", n: "Primer fondeo", dir: 1 },
+    fund: { c: "#a3e635", n: "Envío de fondos", dir: 1 },
+    hop: { c: "#facc15", n: "Fondeo del intermediario (2 saltos)", dir: 1 },
+    cex: { c: "#fb923c", n: "Fondos desde exchange", dir: 1 },
+    slot: { c: "#f87171", n: "Compra en el mismo slot/bloque", dir: 0 },
+    cobuy: { c: "#c084fc", n: "Compras casi a la vez", dir: 0 }
+  };
+  var CK_PHASES = [["leyendo historial", 2, 40], ["transferencias directas", 42, 14], ["datos de las coins", 56, 4], ["2 saltos", 60, 25], ["revisando puentes", 85, 13]];
+  function ckPct(p) {
+    p = p || ""; for (var i = 0; i < CK_PHASES.length; i++) { var f = CK_PHASES[i]; if (p.indexOf(f[0]) >= 0) { var m = p.match(/(\d+)\s*\/\s*(\d+)/); return Math.round(f[1] + (m ? f[2] * (+m[1] - 1) / Math.max(1, +m[2]) : 0)); } }
+    return /terminad|guardand/.test(p) ? 99 : 1;
+  }
+  function txUrl(c, tx) { return ((D.chains[c] || {}).tx || "https://solscan.io/tx/") + tx; }
+  function fullDate(ts) { if (!ts) return "–"; return new Date(ts * 1000).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
+  function amtFmt(x) { if (x == null) return ""; var a = Math.abs(x); return a >= 1000 ? Math.round(x).toLocaleString("es-ES") : a >= 1 ? x.toFixed(2).replace(".", ",") : x.toPrecision(2).replace(".", ","); }
+  function addrFam(a) { return /^0x[0-9a-fA-F]{40}$/.test(a) ? "evm" : /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a) ? "solana" : null; }
+  function parseWs(txt) {
+    var seen = {}, out = [];
+    (txt.match(/0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}/g) || []).forEach(function (a) { var k = a.indexOf("0x") === 0 ? a.toLowerCase() : a; if (!seen[k]) { seen[k] = 1; out.push(a); } });
+    return out;
+  }
+  function ckName(a) {
+    var r = CK.res, w = r && D.wIdx[r.chain + ":" + a], n = r && (r.nodes || []).find(function (x) { return x.id === a; });
+    var al = w && w.al ? w.al : "";
+    return (n && n.kind === "input" ? n.label : "") + (al ? (n && n.kind === "input" ? " · " : "") + al : "") || (n ? n.label : short(a));
+  }
+  function ckLink(c, a, txt) { return '<a target="_blank" rel="noopener" class="addr" href="' + esc(explorer(c, a)) + '">' + esc(txt || short(a)) + "</a>"; }
+  function checkConnections(list, chain) {
+    CK.sub = "check"; CK.prefill = { ws: list.slice(0, 10), chain: chain || "auto" };
+    $("drawer").classList.add("hide"); goto("conn");
+  }
+  function renderConnSeg() {
+    document.querySelectorAll("#connSeg [data-csub]").forEach(function (b) { b.classList.toggle("on", b.dataset.csub === CK.sub); });
+    $("connCheck").classList.toggle("hide", CK.sub !== "check"); $("connBox").classList.toggle("hide", CK.sub !== "clusters");
+  }
+  function buildCheck() {
+    var chains = ['<option value="auto">Detectar automáticamente</option>'].concat(Object.keys(D.chains).map(function (c) { return '<option value="' + c + '">' + esc(D.chains[c].name) + "</option>"; })).join("");
+    $("connCheck").innerHTML = '<div class="box"><h3>🔍 Comprobar conexiones entre wallets</h3><div class="form ckform">' +
+      '<textarea id="ckItems" spellcheck="false" placeholder="Pega 2 o más wallets (Solana o EVM, máx. 10): una por línea o separadas por espacios. Sirven también links de Solscan/GMGN. No hace falta que estén en la base."></textarea>' +
+      '<div class="row"><label>Chain <select id="ckChain">' + chains + '</select></label><span id="ckCount" class="mini"></span></div>' +
+      '<div class="row"><input id="ckPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" value="' + esc(PIN) + '" style="width:120px"><button class="primary" id="ckGo">🔗 Comprobar conexiones</button><span id="ckMsg" class="small"></span></div>' +
+      '<div class="note">Busca entre las wallets: <b>transferencias directas</b> (SOL, nativo y tokens, en los dos sentidos, en todo el historial del par), <b>fondeador común</b> (directo o a 2 saltos, con wallets puente), <b>mismo exchange</b> (hot wallets etiquetadas), <b>compras en el mismo slot/bloque</b>, <b>compras tempranas casi a la vez</b> y quién paga las comisiones de quién. Corre en tu box como trabajo (aparece en <b>Trabajos</b>) y se guarda aquí abajo. Coste aproximado en Solana: ~100 créditos de Helius por wallet (con topes de historial e intermediarios para no gastar de más).</div>' +
+      "</div></div>" +
+      '<div id="ckProg"></div><div id="ckRes"></div><div id="ckSaved"></div>';
+    CK.built = true;
+    $("ckItems").addEventListener("input", ckCount);
+    renderCkProg(); renderCkRes(); renderCkSaved();
+    if (PIN && BOX_OK && !CK.list) loadChecks();
+  }
+  function ckCount() {
+    var ws = parseWs($("ckItems").value), fams = {}; ws.forEach(function (a) { fams[addrFam(a)] = 1; });
+    var f = Object.keys(fams);
+    $("ckCount").innerHTML = !ws.length ? "" : plural(ws.length, "wallet") + " · " + (f.length > 1 ? '<span class="neg">mezcla Solana y EVM: compruébalas por separado</span>' : f[0] === "evm" ? "EVM (la chain se detecta sola o elígela)" : "Solana") + (ws.length > 10 ? ' · <span class="neg">máximo 10</span>' : ws.length < 2 ? ' · <span class="neg">añade al menos otra</span>' : "");
+  }
+  function applyCkPrefill() {
+    if (!CK.prefill || !$("ckItems")) return;
+    $("ckItems").value = CK.prefill.ws.join("\n"); $("ckChain").value = CK.prefill.chain in D.chains ? CK.prefill.chain : "auto"; CK.prefill = null; ckCount();
+    $("ckItems").focus(); $("ckItems").scrollIntoView({ block: "center" });
+  }
+  function submitCheck() {
+    var ws = parseWs($("ckItems").value);
+    var msg = function (h) { $("ckMsg").innerHTML = h; };
+    if (ws.length < 2) return msg('<span class="neg">Pega al menos 2 wallets</span>');
+    if (ws.length > 10) return msg('<span class="neg">Máximo 10 wallets por comprobación</span>');
+    var pin = $("ckPin").value.trim(); if (!pin) return msg('<span class="neg">Falta el PIN</span>');
+    PIN = pin; localStorage.setItem("wh_pin", PIN);
+    var btn = $("ckGo"); btn.disabled = true; msg("Enviando…");
+    api("/api/connect", { wallets: ws.join("\n"), chain: $("ckChain").value }).then(function (r) {
+      msg('<span class="pos">En marcha</span>');
+      CK.job = { id: r.id, status: "pending", progress: "en cola", chain: r.chain, wallets: r.wallets, t0: NOW() };
+      CK.res = null; CK.sel = null; renderCkProg(); renderCkRes(); pollCheck(); loadData(); loadChecks();
+    }).catch(function (e) { msg('<span class="neg">' + esc(e.message) + "</span>"); }).then(function () { btn.disabled = false; });
+  }
+  function pollCheck() {
+    clearTimeout(CK.poll); var j = CK.job; if (!j) return;
+    api("/api/checks", { op: "status", id: j.id }).then(function (r) {
+      if (CK.job !== j) return;
+      j.status = r.status; j.progress = r.progress; j.message = r.message; j.err = null; j.chain = r.chain || j.chain;
+      if (r.status === "done" && r.result) {
+        CK.job = null; showCheck(r.result); loadChecks(); loadData();
+        toast("Comprobación terminada: " + esc(r.result.summary || ""), 5000);
+      } else if (r.status === "error") { renderCkProg(); loadChecks(); }
+      else { renderCkProg(); CK.poll = setTimeout(pollCheck, 2000); }
+    }).catch(function (e) { j.err = e.message; renderCkProg(); CK.poll = setTimeout(pollCheck, 5000); });
+  }
+  function renderCkProg() {
+    var el = $("ckProg"); if (!el) return; var j = CK.job;
+    if (!j) { el.innerHTML = ""; return; }
+    if (j.status === "error") { el.innerHTML = '<div class="box"><div class="warnbox">❌ La comprobación falló: ' + esc(j.message || j.progress || "error") + ' <button class="ghost" id="ckProgX">Cerrar</button></div></div>'; return; }
+    var pct = j.status === "pending" ? 1 : ckPct(j.progress);
+    el.innerHTML = '<div class="box ckprog"><div class="row"><span class="spin"></span><b>Comprobando ' + plural(j.wallets.length, "wallet") + "</b> <span class=\"chainpill\">" + esc(chainName(j.chain)) + '</span><span class="muted small">' + esc(j.status === "pending" ? "en cola…" : j.progress || "en curso…") + " · " + dur(NOW() - j.t0) + "</span></div>" +
+      '<div class="pbar"><i style="width:' + pct + '%"></i></div>' + (j.err ? '<div class="mini neg">Sin respuesta del box (' + esc(j.err) + "), reintentando…</div>" : '<div class="mini">Suele tardar 30-90 s para 2-3 wallets. Puedes salir de aquí: el resultado se guarda y queda en la lista de abajo y en Trabajos.</div>') + "</div>";
+  }
+  function showCheck(res) {
+    CK.res = res; CK.sel = null; CK.pos = null; renderCkProg(); renderCkRes();
+    var el = $("ckRes"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function openCheck(id) {
+    if (!needPin()) return;
+    api("/api/checks", { op: "status", id: id }).then(function (r) {
+      if (r.status === "done" && r.result) return showCheck(r.result);
+      if (r.status === "error") return toast("Esa comprobación falló: " + esc(r.message || ""));
+      CK.job = { id: id, status: r.status, progress: r.progress, chain: r.chain, wallets: r.wallets || [], t0: NOW() }; renderCkProg(); pollCheck();
+    }).catch(function (e) { toast(esc(e.message)); });
+  }
+  function loadChecks() {
+    if (!BOX_OK || !PIN) { renderCkSaved(); return Promise.resolve(); }
+    return api("/api/checks", { op: "list" }).then(function (r) { CK.list = r.checks || []; renderCkSaved(); }).catch(function (e) { CK.listErr = e.message; renderCkSaved(); });
+  }
+  function renderCkSaved() {
+    var el = $("ckSaved"); if (!el) return;
+    var L = CK.list;
+    el.innerHTML = '<div class="box"><h3>📁 Comprobaciones guardadas' + (L ? " (" + L.length + ")" : "") + ' <span class="mini">· privadas, en tu box</span></h3>' +
+      (!L ? '<div class="muted">' + (CK.listErr ? esc(CK.listErr) + " · " : "") + 'Con el PIN y el box encendido verás aquí tus comprobaciones anteriores. <button class="ghost" id="ckLoad">Cargar</button></div>' :
+        !L.length ? '<div class="muted">Todavía no hay ninguna.</div>' :
+          '<div style="overflow:auto"><table class="list cklist"><tr><th>Fecha</th><th>Chain</th><th>Wallets</th><th>Resultado</th><th>Créditos</th><th></th></tr>' + L.map(function (k) {
+            var sc = k.max_score;
+            return '<tr><td class="nowrap">' + fullDate(k.created) + '</td><td><span class="chainpill">' + esc(chainName(k.chain)) + '</span></td><td class="addr">' + k.wallets.slice(0, 4).map(function (a) { var w = D.wIdx[k.chain + ":" + a]; return esc(w && w.al ? w.al : short(a)); }).join("<br>") + (k.wallets.length > 4 ? "<br>+" + (k.wallets.length - 4) : "") + "</td>" +
+              "<td>" + (k.status === "done" ? (sc != null ? '<span class="score" style="background:' + ckColor(sc) + '">' + sc + "</span> " : "") + esc(k.summary || "") : k.status === "error" ? '<span class="neg">Error: ' + esc(k.error || "") + "</span>" : '<span class="st running">' + esc(STL[k.status] || k.status) + "</span> " + esc(k.progress || "")) + "</td>" +
+              "<td>" + (k.credits == null ? "–" : k.credits) + '</td><td class="nowrap">' + (k.status !== "error" ? '<button class="ghost" data-ckopen="' + esc(k.id) + '">Abrir</button> ' : "") + '<button class="ghost" data-ckredo="' + esc(k.id) + '" title="Copiar estas wallets al formulario">↻ Repetir</button> <button class="danger" data-ckdel="' + esc(k.id) + '" title="Borrar del box">🗑</button></td></tr>';
+          }).join("") + "</table></div>") + "</div>";
+  }
+  function ckColor(s) { return s >= 75 ? "#f87171" : s >= 50 ? "#fb923c" : s >= 25 ? "#facc15" : s > 0 ? "#94a3b8" : "#475569"; }
+  function renderCkRes() {
+    var el = $("ckRes"); if (!el) return; var r = CK.res;
+    if (!r) { el.innerHTML = ""; return; }
+    var c = r.chain, info = r.info || {};
+    var madres = (r.bridges || []).filter(function (b) { return b.madre; }), mi = r.madre_inputs || {};
+    var notes = (r.notes || []).map(function (n) { return '<div class="' + (/truncad|límite|tope|solo se|no se pudo|error/i.test(n) ? "warnbox" : "note") + '">' + (/truncad/i.test(n) ? "✂️ " : "ℹ️ ") + esc(n) + "</div>"; }).join("");
+    var wl = r.wallets.map(function (a) {
+      var i = info[a] || {}, w = D.wIdx[c + ":" + a];
+      return '<div class="ckw"><span class="ckwi">W' + (i.i || "?") + "</span> " + ckLink(c, a, a.slice(0, 6) + "…" + a.slice(-6)) + (w && w.al ? ' <b class="alias">' + esc(w.al) + "</b>" : "") + ' <button class="copy" data-copy="' + esc(a) + '">📋</button>' +
+        (w ? ' <a href="#" data-open="' + esc(c + ":" + a) + '" class="mini">en la base' + (w.cl ? " · " + esc(w.cl) : "") + "</a>" : ' <span class="mini">no está en la base</span>') +
+        ' <span class="mini">· ' + (i.error ? '<span class="neg">' + esc(i.error) + "</span>" : (i.n != null ? (i.truncated ? "≥" : "") + i.n + " tx leídas" : "")) + (i.truncated ? " ✂️" : "") + (i.funder ? " · fondeada por " + ckLink(c, i.funder.address) + (i.funder_label ? " (" + esc(i.funder_label) + ")" : "") : "") + "</span>" + (mi[a] ? ' <span class="madre">👑 posible wallet madre: envió fondos a ' + mi[a].map(function (x) { return esc(ckName(x)); }).join(", ") + "</span>" : "") + "</div>";
+    }).join("");
+    var pairs = (r.pairs || []).map(function (p, i) {
+      return '<tr data-ckpair="' + i + '" class="' + (CK.sel && CK.sel.pair === i ? "on" : "") + '"><td class="nowrap"><b>' + esc(ckName(p.a)) + "</b> ↔ <b>" + esc(ckName(p.b)) + '</b></td><td class="nowrap"><span class="score" style="background:' + ckColor(p.score) + '">' + p.score + '</span><div class="sbar"><i style="width:' + p.score + "%;background:" + ckColor(p.score) + '"></i></div></td><td>' + esc(p.reason) + "</td></tr>";
+    }).join("");
+    var bridges = (r.bridges || []).map(function (b) {
+      return '<div class="ckbr ' + (b.madre ? "m" : b.hub ? "h" : "") + '">' + (b.madre ? '<span class="madre">👑 posible wallet madre</span> ' : b.hub ? '<span class="hubtag" data-tip="Mucha actividad (' + (b.txs || "?") + (b.txs_more ? "+" : "") + " tx en " + (b.span_h != null ? num(b.span_h, 0) + " h" : "?") + '): parece un servicio, bot o exchange. Cuenta mucho menos.">🏢 servicio/hub</span> ' : '<span class="mini">puente</span> ') +
+        ckLink(c, b.address, b.label || short(b.address)) + ' <button class="copy" data-copy="' + esc(b.address) + '">📋</button> <span class="small">' + esc(b.role) + "</span>" + (b.txs ? ' <span class="mini">· ' + b.txs + (b.txs_more ? "+" : "") + " tx" + (b.span_h != null ? " en " + dur(b.span_h * 3600) : "") + "</span>" : "") + "</div>";
+    }).join("");
+    el.innerHTML = '<div class="box ckres"><div class="row" style="align-items:flex-start"><h3 style="margin:0">Resultado · ' + plural(r.wallets.length, "wallet") + ' <span class="chainpill">' + esc(chainName(c)) + '</span> <span class="mini">' + fullDate(r.created) + "</span></h3>" +
+      '<span class="right row"><button class="exp" data-export="check">📤 Exportar grupo</button><button class="ghost" id="ckResX" title="Cerrar resultado">✕</button></span></div>' +
+      '<div class="cksum">' + esc(r.summary || "Sin conexiones") + (madres.length ? ' · <span class="madre">👑 ' + madres.map(function (b) { return esc(b.label || short(b.address)); }).join(", ") + "</span>" : "") + "</div>" +
+      '<div class="ckws">' + wl + "</div>" + notes +
+      '<div class="ckgrid"><div class="ckgraph"><svg id="ckSvg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg><div class="cklegend">' +
+      Object.keys(ETYPE).filter(function (t) { return (r.edges || []).some(function (e) { return e.type === t; }); }).map(function (t) { return '<span><i style="background:' + ETYPE[t].c + (t === "cobuy" ? ";height:0;border-top:2px dashed " + ETYPE[t].c : "") + '"></i>' + ETYPE[t].n + "</span>"; }).join("") +
+      '<span><b class="lg in"></b>tus wallets</span><span><b class="lg br"></b>puente</span><span><b class="lg md"></b>wallet madre</span><span><b class="lg hb"></b>servicio/hub</span><span><b class="lg cx"></b>exchange</span></div>' +
+      '<div class="mini">Arrastra los nodos para moverlos. Toca una línea para ver las pruebas (fecha, importe y tx).</div></div>' +
+      '<div class="ckside" id="ckEv"></div></div>' +
+      '<h3 style="margin:14px 0 6px">Pares <span class="mini">· score 0-100 (toca una fila para verla en el grafo)</span></h3><div style="overflow:auto"><table class="list ckpairs"><tr><th>Par</th><th>Score</th><th>Por qué</th></tr>' + (pairs || '<tr><td colspan="3" class="muted">Sin pares.</td></tr>') + "</table></div>" +
+      (bridges ? '<h3 style="margin:14px 0 6px">Wallets puente <span class="mini">· conectan 2 o más de tus wallets</span></h3>' + bridges : "") +
+      '<div class="mini" style="margin-top:10px">Coste: <b>' + (r.credits == null ? "?" : r.credits) + " " + esc(r.unit || "") + "</b>" + (r.seconds ? " · " + dur(r.seconds) : "") + (r.labels ? " · etiquetas: " + esc(r.labels.join(", ")) : "") + " · límites: " + esc((r.limits || {}).max_txs_per_wallet || "?") + " tx por wallet, " + esc((r.limits || {}).max_hop_lookups || "?") + " intermediarios a 2 saltos.</div></div>";
+    drawGraph(); renderCkEv(); ckDrag($("ckSvg"));
+  }
+  // ---- grafo (SVG, sin dependencias): layout de fuerzas + arrastrar
+  function hashN(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10000) / 10000; }
+  function nodeR(n) { return n.kind === "input" ? 17 : n.kind === "cex" ? 14 : n.kind === "bridge" ? (n.madre ? 15 : 12) : 7; }
+  function ckDims() { return innerWidth < 700 ? { W: 480, H: 600 } : { W: 800, H: 520 }; }   // en móvil, lienzo vertical: nodos y líneas más grandes
+  function layoutCk(r) {
+    var dm = ckDims(), W = dm.W, H = dm.H, ns = r.nodes, P = {}, ins = ns.filter(function (n) { return n.kind === "input"; });
+    ins.forEach(function (n, i) { var a = -Math.PI / 2 + 2 * Math.PI * i / ins.length; P[n.id] = { x: W / 2 + Math.cos(a) * W * 0.3, y: H / 2 + Math.sin(a) * H * 0.33 }; });
+    var nb = {}; r.edges.forEach(function (e) { (nb[e.a] = nb[e.a] || []).push(e.b); (nb[e.b] = nb[e.b] || []).push(e.a); });
+    ns.forEach(function (n) {
+      if (P[n.id]) return; var xs = (nb[n.id] || []).map(function (x) { return P[x]; }).filter(Boolean);
+      var cx = xs.length ? xs.reduce(function (s, p) { return s + p.x; }, 0) / xs.length : W / 2, cy = xs.length ? xs.reduce(function (s, p) { return s + p.y; }, 0) / xs.length : H / 2;
+      P[n.id] = { x: cx + (hashN(n.id) - 0.5) * 120, y: cy + (hashN(n.id + "y") - 0.5) * 120 };
+    });
+    var links = {}; r.edges.forEach(function (e) { links[e.a < e.b ? e.a + "|" + e.b : e.b + "|" + e.a] = [e.a, e.b]; });
+    var L = Object.keys(links).map(function (k) { return links[k]; }), k = Math.sqrt(W * H / Math.max(4, ns.length)) * 0.55, t = 40;
+    for (var it = 0; it < 350; it++) {
+      var F = {}; ns.forEach(function (n) { F[n.id] = { x: 0, y: 0 }; });
+      for (var i = 0; i < ns.length; i++) for (var j = i + 1; j < ns.length; j++) {
+        var a = P[ns[i].id], b = P[ns[j].id], dx = a.x - b.x, dy = a.y - b.y, d = Math.max(1, Math.sqrt(dx * dx + dy * dy)), f = k * k / d;
+        F[ns[i].id].x += dx / d * f; F[ns[i].id].y += dy / d * f; F[ns[j].id].x -= dx / d * f; F[ns[j].id].y -= dy / d * f;
+      }
+      L.forEach(function (l) { var a = P[l[0]], b = P[l[1]], dx = a.x - b.x, dy = a.y - b.y, d = Math.max(1, Math.sqrt(dx * dx + dy * dy)), f = d * d / k; F[l[0]].x -= dx / d * f; F[l[0]].y -= dy / d * f; F[l[1]].x += dx / d * f; F[l[1]].y += dy / d * f; });
+      ns.forEach(function (n) {
+        var p = P[n.id], f = F[n.id]; f.x += (W / 2 - p.x) * 0.25; f.y += (H / 2 - p.y) * 0.25;
+        var d = Math.max(1, Math.sqrt(f.x * f.x + f.y * f.y)), m = Math.min(d, t) * (n.kind === "input" ? 0.6 : 1);
+        p.x = Math.max(40, Math.min(W - 40, p.x + f.x / d * m)); p.y = Math.max(34, Math.min(H - 40, p.y + f.y / d * m));
+      });
+      t = Math.max(1.5, t * 0.985);
+    }
+    // encajar en el lienzo (aprovecha todo el espacio, con margen para las etiquetas)
+    var ids = Object.keys(P), x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    ids.forEach(function (id) { var p = P[id]; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
+    var px = 60, py = 36, sx = Math.min(2.5, (W - 2 * px) / Math.max(1, x1 - x0)), sy = Math.min(2.5, (H - 2 * py - 16) / Math.max(1, y1 - y0));
+    ids.forEach(function (id) { var p = P[id]; p.x = W / 2 + (p.x - (x0 + x1) / 2) * sx; p.y = (H - 16) / 2 + (p.y - (y0 + y1) / 2) * sy; });
+    return P;
+  }
+  function edgeGeom(e, P, off, rs, rt) {
+    var a = P[e.a], b = P[e.b], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    var sg = e.a < e.b ? 1 : -1, cx = mx - dy / d * off * sg, cy = my + dx / d * off * sg;
+    var ux = cx - a.x, uy = cy - a.y, ul = Math.max(1, Math.sqrt(ux * ux + uy * uy)), vx = b.x - cx, vy = b.y - cy, vl = Math.max(1, Math.sqrt(vx * vx + vy * vy));
+    var sx = a.x + ux / ul * rs, sy = a.y + uy / ul * rs, ex = b.x - vx / vl * (rt + 3), ey = b.y - vy / vl * (rt + 3);
+    return { d: "M" + sx.toFixed(1) + "," + sy.toFixed(1) + " Q" + cx.toFixed(1) + "," + cy.toFixed(1) + " " + ex.toFixed(1) + "," + ey.toFixed(1), lx: (sx + 2 * cx + ex) / 4, ly: (sy + 2 * cy + ey) / 4 };
+  }
+  function drawGraph() {
+    var svg = $("ckSvg"), r = CK.res; if (!svg || !r) return;
+    var dm = ckDims();
+    if (!CK.pos || CK.dims !== dm.W) { CK.pos = layoutCk(r); CK.dims = dm.W; }
+    svg.setAttribute("viewBox", "0 0 " + dm.W + " " + dm.H);
+    var P = CK.pos, N = {}; r.nodes.forEach(function (n) { N[n.id] = n; });
+    var grp = {}; r.edges.forEach(function (e) { var k = e.a < e.b ? e.a + "|" + e.b : e.b + "|" + e.a; (grp[k] = grp[k] || []).push(e.id); });
+    var hl = ckHighlight(), defs = "<defs>" + Object.keys(ETYPE).map(function (t) { return '<marker id="ar-' + t + '" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + ETYPE[t].c + '"/></marker>'; }).join("") + "</defs>";
+    var es = r.edges.map(function (e) {
+      if (!P[e.a] || !P[e.b]) return "";
+      var k = e.a < e.b ? e.a + "|" + e.b : e.b + "|" + e.a, g = grp[k], i = g.indexOf(e.id), off = g.length > 1 ? (i - (g.length - 1) / 2) * 26 : 0;
+      var T = ETYPE[e.type] || { c: "#94a3b8", dir: 1 }, G = edgeGeom(e, P, off, nodeR(N[e.a]), nodeR(N[e.b]));
+      var on = hl.edges[e.id], dim = hl.any && !on, sw = 1.8 + Math.min(2.5, Math.log(1 + (e.n || 1)));
+      return '<g class="ed' + (on ? " on" : "") + (dim ? " dim" : "") + '" data-edge="' + esc(e.id) + '"><path class="ev" d="' + G.d + '" stroke="' + T.c + '" stroke-width="' + (on ? sw + 1.5 : sw).toFixed(1) + '"' + (e.type === "cobuy" ? ' stroke-dasharray="6 4"' : e.type === "hop" ? ' stroke-dasharray="2 3"' : "") + (T.dir ? ' marker-end="url(#ar-' + e.type + ')"' : "") + "/>" +
+        '<path class="eh" d="' + G.d + '"/>' + ((e.n || 1) > 1 ? '<text class="en" x="' + G.lx.toFixed(1) + '" y="' + (G.ly + 4).toFixed(1) + '">×' + e.n + "</text>" : "") + "</g>";
+    }).join("");
+    var nsv = r.nodes.map(function (n) {
+      var p = P[n.id], R = nodeR(n), on = hl.nodes[n.id], dim = hl.any && !on;
+      var cls = "nd k-" + n.kind + (n.madre ? " madre" : "") + (n.hub ? " hub" : "") + (on ? " on" : "") + (dim ? " dim" : "");
+      var shape = n.kind === "cex" ? '<rect x="' + (-R - 8) + '" y="' + (-R + 2) + '" width="' + (2 * R + 16) + '" height="' + (2 * R - 4) + '" rx="6"/>' : '<circle r="' + R + '"/>';
+      var inner = n.kind === "input" ? '<text class="ni" y="4">' + esc(n.label) + "</text>" : n.madre ? '<text class="ni" y="5">👑</text>' : n.kind === "cex" ? '<text class="ni" y="4">🏦</text>' : "";
+      var w = n.kind === "input" && D.wIdx[r.chain + ":" + n.id], lab = n.kind === "input" ? (w && w.al ? w.al : short(n.id)) : n.kind === "cex" ? n.label : (n.label || short(n.id)) + (n.hub ? " 🏢" : "");
+      return '<g class="' + cls + '" data-node="' + esc(n.id) + '" transform="translate(' + p.x.toFixed(1) + "," + p.y.toFixed(1) + ')">' + (n.madre ? '<circle class="halo" r="' + (R + 6) + '"/>' : "") + shape + inner + '<text class="nl" y="' + (R + 13) + '">' + esc(lab) + "</text><title>" + esc(n.id + (n.role ? " · " + n.role : "")) + "</title></g>";
+    }).join("");
+    svg.innerHTML = defs + '<g class="eds">' + es + '</g><g class="nds">' + nsv + "</g>";
+  }
+  function ckHighlight() {
+    var s = CK.sel, r = CK.res, out = { any: false, edges: {}, nodes: {} }; if (!s || !r) return out;
+    var add = function (id) { var e = r.edges.find(function (x) { return x.id === id; }); if (e) { out.edges[id] = 1; out.nodes[e.a] = 1; out.nodes[e.b] = 1; } };
+    if (s.edge) add(s.edge);
+    if (s.pair != null) { var p = r.pairs[s.pair]; if (p) { out.nodes[p.a] = 1; out.nodes[p.b] = 1; p.ev.forEach(function (v) { (v.edges || []).forEach(add); if (v.node) out.nodes[v.node] = 1; }); } }
+    if (s.node) { out.nodes[s.node] = 1; r.edges.forEach(function (e) { if (e.a === s.node || e.b === s.node) add(e.id); }); }
+    out.any = true; return out;
+  }
+  function renderCkEv() {
+    var el = $("ckEv"), r = CK.res; if (!el || !r) return; var s = CK.sel, c = r.chain;
+    if (!s) { el.innerHTML = '<div class="muted">👆 Toca una línea del grafo para ver las pruebas, un nodo para ver la wallet o una fila de la tabla de pares.</div>'; return; }
+    if (s.edge) {
+      var e = r.edges.find(function (x) { return x.id === s.edge; }); if (!e) { el.innerHTML = ""; return; }
+      var T = ETYPE[e.type] || { c: "#94a3b8", n: e.type, dir: 1 };
+      el.innerHTML = '<div class="row"><h4><span class="sw" style="background:' + T.c + '"></span>' + esc(e.label || T.n) + '</h4><button class="ghost right" id="ckEvX">✕</button></div>' +
+        '<div class="small" style="margin-bottom:6px"><b>' + esc(ckName(e.a)) + "</b> " + (T.dir ? "→" : "↔") + " <b>" + esc(ckName(e.b)) + "</b>" + ((e.n || 1) > e.ev.length ? ' <span class="mini">· ' + e.n + " en total, se muestran " + e.ev.length + "</span>" : "") + "</div>" +
+        '<div class="ckevl">' + e.ev.map(function (v) {
+          var amt = v.amt != null ? amtFmt(v.amt) + " " + esc(v.asset || "") + (v.amt2 != null ? " / " + amtFmt(v.amt2) + (e.type === "slot" || e.type === "cobuy" ? " " + esc(nat(c)) : "") : "") : "";
+          if ((e.type === "slot" || e.type === "cobuy") && v.amt != null) amt = esc(v.asset || "") + ": " + amtFmt(v.amt) + " y " + amtFmt(v.amt2) + " " + esc(nat(c));
+          return '<div class="evrow"><div><b>' + fullDate(v.ts) + "</b>" + (amt ? ' · <span class="amt">' + amt + "</span>" : "") + '</div><div class="mini">' + esc(v.note || "") + "</div>" +
+            '<div class="row small">' + (v.tx ? '<a class="xl" target="_blank" rel="noopener" href="' + esc(txUrl(c, v.tx)) + '">tx ' + esc(exName(c)) + " ↗</a>" : "") + (v.tx2 ? '<a class="xl" target="_blank" rel="noopener" href="' + esc(txUrl(c, v.tx2)) + '">tx 2 ↗</a>' : "") + "</div></div>";
+        }).join("") + "</div>";
+      return;
+    }
+    if (s.pair != null) {
+      var p = r.pairs[s.pair]; if (!p) { el.innerHTML = ""; return; }
+      el.innerHTML = '<div class="row"><h4>' + esc(ckName(p.a)) + " ↔ " + esc(ckName(p.b)) + ' <span class="score" style="background:' + ckColor(p.score) + '">' + p.score + '</span></h4><button class="ghost right" id="ckEvX">✕</button></div><div class="small" style="margin-bottom:6px">' + esc(p.level) + "</div>" +
+        (p.ev.length ? p.ev.map(function (v) { return '<div class="evrow"><div class="small">' + (v.w ? '<span class="wt">+' + v.w + "</span> " : "") + esc(v.text) + "</div>" + ((v.edges || []).length ? '<div class="row small">' + v.edges.map(function (id) { var ed = r.edges.find(function (x) { return x.id === id; }); return ed ? '<button class="ghost mini" data-ckedge="' + esc(id) + '">ver pruebas: ' + esc((ETYPE[ed.type] || {}).n || ed.type) + "</button>" : ""; }).join("") + "</div>" : "") + "</div>"; }).join("") : '<div class="muted">No se encontró ninguna conexión entre estas dos en lo leído.</div>');
+      return;
+    }
+    if (s.node) {
+      var n = r.nodes.find(function (x) { return x.id === s.node; }); if (!n) { el.innerHTML = ""; return; }
+      var b = (r.bridges || []).find(function (x) { return x.address === n.id; }), isCex = n.kind === "cex";
+      el.innerHTML = '<div class="row"><h4>' + (n.kind === "input" ? "Tu wallet " + esc(n.label) : isCex ? "🏦 Exchange: " + esc(n.label) : n.madre ? "👑 Posible wallet madre" : n.hub ? "🏢 Servicio / hub" : n.kind === "bridge" ? "Wallet puente" : "Intermediario") + '</h4><button class="ghost right" id="ckEvX">✕</button></div>' +
+        (isCex ? '<div class="small">Hot wallets etiquetadas de ' + esc(n.label) + ". Que varias wallets saquen fondos del mismo exchange solo pesa si es casi a la vez y con importes parecidos.</div>" :
+          '<div class="mini addr" style="word-break:break-all">' + esc(n.id) + ' <button class="copy" data-copy="' + esc(n.id) + '">📋</button></div><div class="row small" style="margin:6px 0">' + exLinks({ c: c, a: n.id }) + "</div>" +
+          (n.role ? '<div class="small">' + esc(n.role) + "</div>" : "") + (b && b.txs ? '<div class="mini">Actividad: ' + b.txs + (b.txs_more ? "+" : "") + " tx" + (b.span_h != null ? " en " + dur(b.span_h * 3600) : "") + (b.hub ? " → parece un servicio/bot, cuenta mucho menos" : "") + "</div>" : "") +
+          (n.kind !== "input" && D.wIdx[c + ":" + n.id] ? '<a href="#" data-open="' + esc(c + ":" + n.id) + '">Abrir en la base</a>' : ""));
+    }
+  }
+  function ckDrag(svg) {
+    var drag = null;
+    svg.addEventListener("pointerdown", function (e) {
+      var g = e.target.closest(".nd"); if (!g) return;
+      var pt = svg.createSVGPoint(); drag = { id: g.dataset.node, moved: false, sx: e.clientX, sy: e.clientY, pt: pt };
+      try { svg.setPointerCapture(e.pointerId); } catch (x) { }
+      e.preventDefault();
+    });
+    svg.addEventListener("pointermove", function (e) {
+      if (!drag) return; if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) drag.moved = true; if (!drag.moved) return;
+      var m = svg.getScreenCTM(); if (!m) return; drag.pt.x = e.clientX; drag.pt.y = e.clientY; var q = drag.pt.matrixTransform(m.inverse());
+      var dm = ckDims(); CK.pos[drag.id] = { x: Math.max(20, Math.min(dm.W - 20, q.x)), y: Math.max(20, Math.min(dm.H - 20, q.y)) }; drawGraph();
+    });
+    var end = function () { if (!drag) return; var d = drag; drag = null; if (!d.moved) { CK.sel = CK.sel && CK.sel.node === d.id ? null : { node: d.id }; drawGraph(); renderCkEv(); markPairRows(); } };
+    svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", function () { drag = null; });
+    // al tocar (móvil), el clic sintético se «ajusta» a la línea más cercana: se elige con el punto exacto del dedo
+    svg.addEventListener("pointerup", function (e) {
+      if (e.pointerType !== "touch") return;
+      var el = document.elementFromPoint(e.clientX, e.clientY), g = el && el.closest && el.closest(".ed");
+      if (g) { CK.touchAt = Date.now(); ckSelect(CK.sel && CK.sel.edge === g.dataset.edge ? null : { edge: g.dataset.edge }); }
+    });
+  }
+  function markPairRows() { document.querySelectorAll("#ckRes [data-ckpair]").forEach(function (tr) { tr.classList.toggle("on", !!CK.sel && CK.sel.pair === +tr.dataset.ckpair); }); }
+  function ckSelect(sel) { CK.sel = sel; drawGraph(); renderCkEv(); markPairRows(); }
 
   // ---------------------------------------------------------------- render general
   function renderAll() {
@@ -657,8 +959,23 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener("click", function (e) {
     if (e.target.closest("a[target=_blank]")) return; // enlaces externos: no abrir el detalle
-    var t = e.target.closest("[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
+    var t = e.target.closest("[data-csub],#ckGo,#ckLoad,[data-ckopen],[data-ckredo],[data-ckdel],#ckResX,#ckProgX,[data-edge],[data-ckpair],[data-ckedge],#ckEvX,[data-ck],[data-cksel],[data-ckjob],[data-del],[data-delsel],[data-delcoin],#delGo,[data-sel],#selAll,#selClear,[data-export],[data-emo],[data-cpout],[data-dl],#grpSave,[data-mclose],[data-untag],#clrTags,[data-tab],[data-goto],[data-star],[data-copy],[data-sort],[data-tag],[data-open],[data-close],[data-coin],[data-cluster],[data-kind],[data-alias],[data-rescan],[data-rescan-token],#scanGo,#alSave,#alLoad,#fClear,#moreBtn,tr[data-k]");
     if (!t) { if (e.target.id === "drawer") $("drawer").classList.add("hide"); if (e.target.id === "modal") closeModal(); return; }
+    if (t.dataset.csub) { CK.sub = t.dataset.csub; return renderConn(); }
+    if (t.id === "ckGo") return submitCheck();
+    if (t.id === "ckLoad") { if (needPin()) loadChecks(); return; }
+    if (t.dataset.ckopen) return openCheck(t.dataset.ckopen);
+    if (t.dataset.ckjob) { CK.sub = "check"; goto("conn"); return openCheck(t.dataset.ckjob); }
+    if (t.dataset.ckredo) { var kr = (CK.list || []).find(function (x) { return x.id === t.dataset.ckredo; }); if (kr) { CK.prefill = { ws: kr.wallets, chain: kr.chain }; applyCkPrefill(); } return; }
+    if (t.dataset.ckdel) { if (!confirm("¿Borrar esta comprobación guardada del box?")) return; return api("/api/checks", { op: "delete", id: t.dataset.ckdel }).then(function (r) { CK.list = r.checks || []; if (CK.res && CK.res.id === t.dataset.ckdel) { CK.res = null; renderCkRes(); } renderCkSaved(); toast("Comprobación borrada"); loadData(); }).catch(function (er) { toast(esc(er.message)); }); }
+    if (t.id === "ckResX") { CK.res = null; CK.sel = null; return renderCkRes(); }
+    if (t.id === "ckProgX") { CK.job = null; return renderCkProg(); }
+    if (t.dataset.edge) return Date.now() - (CK.touchAt || 0) < 800 ? null : ckSelect(CK.sel && CK.sel.edge === t.dataset.edge ? null : { edge: t.dataset.edge });
+    if (t.dataset.ckedge) return ckSelect({ edge: t.dataset.ckedge });
+    if (t.dataset.ckpair) { var pi = +t.dataset.ckpair; ckSelect(CK.sel && CK.sel.pair === pi ? null : { pair: pi }); var gs = $("ckSvg"); if (gs && innerWidth < 900) gs.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (t.id === "ckEvX") return ckSelect(null);
+    if (t.dataset.ck) { e.stopPropagation(); var wk = D.wIdx[t.dataset.ck]; if (!wk) return; return checkConnections([wk.a].concat((wk.lk || []).map(function (l) { return l[0]; }).filter(function (a, i, arr) { return arr.indexOf(a) === i && a !== wk.a; })), wk.c); }
+    if (t.dataset.cksel) { var sk = Object.keys(S.sel).map(splitKey), chs = {}; sk.forEach(function (x) { chs[x.c] = 1; }); if (sk.length > 10) toast("Máximo 10 wallets: se usan las 10 primeras"); return checkConnections(sk.map(function (x) { return x.a; }), Object.keys(chs).length === 1 ? sk[0].c : "auto"); }
     if (t.dataset.del) { e.stopPropagation(); return openDelete("wallets", [t.dataset.del]); }
     if (t.dataset.delsel) return openDelete("wallets", Object.keys(S.sel));
     if (t.dataset.delcoin) { e.preventDefault(); e.stopPropagation(); return openDelete("token", t.dataset.delcoin); }
@@ -683,7 +1000,7 @@
     if (t.dataset.open) { e.preventDefault(); return openWallet(t.dataset.open); }
     if (t.hasAttribute("data-close")) return $("drawer").classList.add("hide");
     if (t.hasAttribute("data-coin")) { e.preventDefault(); e.stopPropagation(); $("drawer").classList.add("hide"); var kc = t.dataset.coin; if (kc) { S.tab = "wallets"; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === "wallets"); }); window.scrollTo(0, 0); } return setCoin(kc); }
-    if (t.dataset.cluster) { e.preventDefault(); $("drawer").classList.add("hide"); return goto("conn"); }
+    if (t.dataset.cluster) { e.preventDefault(); $("drawer").classList.add("hide"); CK.sub = "clusters"; return goto("conn"); }
     if (t.dataset.kind) { S.kind = t.dataset.kind; return renderScan(); }
     if (t.dataset.alias) { e.stopPropagation(); return editAlias(t.dataset.alias); }
     if (t.dataset.rescan) { var w2 = D.wIdx[t.dataset.rescan]; return quickScan("wallets", w2.c, w2.a); }
@@ -708,8 +1025,9 @@
   document.addEventListener("mouseover", function (e) { var el = e.target.closest("[data-tip]"); if (el) showTip(el, e.clientX, e.clientY); else tip.classList.add("hide"); });
   document.addEventListener("touchstart", function (e) { var el = e.target.closest("[data-tip]"); if (!el) { tip.classList.add("hide"); return; } var t0 = e.touches[0]; lp = setTimeout(function () { showTip(el, t0.clientX, t0.clientY); }, 450); }, { passive: true });
   document.addEventListener("touchend", function () { clearTimeout(lp); setTimeout(function () { tip.classList.add("hide"); }, 2500); });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { $("drawer").classList.add("hide"); closeModal(); } if (e.key === "Enter" && e.target && e.target.id === "delPin") runDelete(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { if (CK.sel && $("modal").classList.contains("hide") && $("drawer").classList.contains("hide")) ckSelect(null); $("drawer").classList.add("hide"); closeModal(); } if (e.key === "Enter" && e.target && e.target.id === "delPin") runDelete(); if (e.key === "Enter" && e.target && e.target.id === "ckPin") submitCheck(); });
   $("modal").addEventListener("input", updateExport);
+  window.addEventListener("resize", function () { if (CK.res && CK.dims !== ckDims().W) drawGraph(); });
 
   // ---------------------------------------------------------------- arranque
   function fillChains() { if (!D) return; var sel = $("chainSel"); if (sel.options.length > 1) return; Object.keys(D.chains).forEach(function (c) { var o = document.createElement("option"); o.value = c; o.textContent = D.chains[c].name; sel.appendChild(o); }); }
@@ -726,7 +1044,9 @@
       var ca = h.slice(5).trim(), cur = coinTok();
       if (!cur || (cur.a !== ca && cur.a.toLowerCase() !== ca.toLowerCase())) { S.coin = ""; S.pendingCoin = ca; resolvePendingCoin(); }
       if (S.tab !== "wallets" && S.tab !== "favs") S.tab = "wallets";
-    } else if (["wallets", "favs", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
+    } else if (h.indexOf("check=") === 0) { S.tab = "conn"; CK.sub = "check"; CK.prefill = { ws: parseWs(h.slice(6)), chain: "auto" }; }
+    else if (h === "clusters") { S.tab = "conn"; CK.sub = "clusters"; }
+    else if (["wallets", "favs", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
   }
   if (location.hash) { readHash(); setTimeout(function () { goto(S.tab); }, 300); }
 })();

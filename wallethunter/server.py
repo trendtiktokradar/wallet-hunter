@@ -6,6 +6,8 @@
   POST /api/aliases   {pin, op: list|set, chain, address, alias}   (alias vacío = borrar)
   POST /api/groups    {pin, op: list|save|delete, group: {id?, name, emoji, chain, wallets[], source}, id}
   POST /api/delete    {pin, op: wallets|token|plan_token, items:[{chain,address}], chain, token, block}
+  POST /api/connect   {pin, wallets, chain}                  -> {id}  (comprobación de conexiones: trabajo 'connect')
+  POST /api/checks    {pin, op: list|get|status|delete, id}  (comprobaciones guardadas, privadas)
   POST /api/settings  {pin, alerts?}      -> devuelve ajustes actuales
   POST /api/alerts    {pin}               -> últimas alertas
 """
@@ -19,6 +21,28 @@ log = logging.getLogger("wh")
 PORT = int(os.environ.get("WH_PORT", "18795"))
 WAKE = threading.Event()
 DELETE_LOCK = threading.Lock()
+CONNECT_WAKE = threading.Event()
+
+
+def start_connect_worker():
+    """Hilo propio para las comprobaciones de conexiones: no esperan a que acabe un escaneo largo."""
+    def work():
+        c = db.connect()
+        while True:
+            try:
+                job = jobs.next_pending(c, kinds=("connect",))
+                while job:
+                    WAKE.set()
+                    jobs.run_job(c, job)
+                    WAKE.set()   # el bucle republica data.json (Trabajos)
+                    job = jobs.next_pending(c, kinds=("connect",))
+            except Exception:
+                log.exception("hilo de conexiones")
+            CONNECT_WAKE.wait(30)
+            CONNECT_WAKE.clear()
+    t = threading.Thread(target=work, daemon=True, name="connect")
+    t.start()
+    return t
 
 
 class H(BaseHTTPRequestHandler):
@@ -143,6 +167,31 @@ class H(BaseHTTPRequestHandler):
                 log.info("borrado desde la web: %s", {k: v for k, v in r.items() if k != "backup"})
                 WAKE.set()   # el bucle detecta el cambio y republica data.json
                 return self._send(200, {"ok": True, "result": r})
+            if p == "/api/connect":
+                from . import connect
+                chain, ws = connect.clean_wallets(req.get("wallets") or req.get("items") or "", req.get("chain") or "auto")
+                jid = jobs.enqueue(c, "connect", chain, ws, origin="web")
+                connect.save(c, jid, chain, ws, "pending")
+                CONNECT_WAKE.set(); WAKE.set()
+                return self._send(200, {"ok": True, "id": jid, "chain": chain, "wallets": ws})
+            if p == "/api/checks":
+                from . import connect
+                op, cid = req.get("op", "list"), str(req.get("id") or "")[:40]
+                if op == "list":
+                    return self._send(200, {"ok": True, "checks": connect.list_checks(c)})
+                if op in ("get", "status"):
+                    j = c.execute("SELECT status, progress, message, chain, items FROM jobs WHERE id=? AND kind='connect'", (cid,)).fetchone()
+                    if not j:
+                        return self._send(404, {"error": "no encontrada"})
+                    out = {"ok": True, "id": cid, "status": j["status"], "progress": j["progress"], "message": j["message"], "chain": j["chain"], "wallets": json.loads(j["items"] or "[]")}
+                    if j["status"] == "done":
+                        out["result"] = connect.get_check(c, cid)
+                    return self._send(200, out)
+                if op == "delete":
+                    connect.delete_check(c, cid)
+                    WAKE.set()
+                    return self._send(200, {"ok": True, "checks": connect.list_checks(c)})
+                raise ValueError("op no válida")
             if p == "/api/settings":
                 if isinstance(req.get("alerts"), dict):
                     a = req["alerts"]

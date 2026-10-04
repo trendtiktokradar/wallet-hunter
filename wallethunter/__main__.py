@@ -37,6 +37,7 @@ def loop():
     if n:
         log.info("%s trabajos reanudados", n)
     server.start_server()
+    server.start_connect_worker()
     tun = server.Tunnel() if os.environ.get("WH_TUNNEL", "1") == "1" else None
     last_pub, last_watch, last_sig = 0, 0, None
     from .pin import is_set

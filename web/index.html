@@ -67,7 +67,11 @@
 
   <section id="tab-bundles" class="tab hide"><div id="bundlesBox"></div></section>
   <section id="tab-tokens" class="tab hide"><div id="tokensBox"></div></section>
-  <section id="tab-conn" class="tab hide"><div id="connBox"></div></section>
+  <section id="tab-conn" class="tab hide">
+    <div class="seg connseg" id="connSeg"><button data-csub="check" class="on">🔍 Comprobar conexiones</button><button data-csub="clusters">🕸 Clusters y cruce de coins</button></div>
+    <div id="connCheck"></div>
+    <div id="connBox" class="hide"></div>
+  </section>
   <section id="tab-scan" class="tab hide"><div id="scanBox"></div></section>
   <section id="tab-jobs" class="tab hide"><div id="jobsBox"></div></section>
 </main>

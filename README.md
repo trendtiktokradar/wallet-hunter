@@ -96,6 +96,31 @@ Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbral
   Para restaurar: `scripts/service.sh stop`, copiar la copia sobre `state/wallethunter.db`, `scripts/service.sh start`.
 - Desde la terminal: `python3 scripts/cleanup_tokens.py [--block] <chain>:<CA>` (misma lógica).
 
+## Conexiones entre wallets (pestaña Conexiones → «🔍 Comprobar conexiones»)
+- Pegas 2-10 wallets (Solana o EVM; la chain se detecta sola o se elige) + PIN. Corre en el box como trabajo `connect`
+  (`POST /api/connect`, hilo propio para no esperar a un escaneo largo), sale en **Trabajos** y el panel muestra el progreso.
+  Sirve para cualquier wallet, aunque no esté en la base (si está, se aprovechan también sus datos guardados).
+- Qué busca (`wallethunter/connect.py`):
+  - **transferencias directas** entre ellas (SOL/nativo y tokens, en los dos sentidos). En Solana cada par se comprueba en
+    **todo su historial** con Helius `getTransfersByAddress` (filtro `with`), aunque el historial de la wallet esté truncado;
+  - **quién paga las comisiones** de quién (fee payer distinto del firmante);
+  - **fondeador común**: primer fondeo de cada una y, a **2 saltos**, el fondeador de sus intermediarios principales → wallets
+    **puente**. Los puentes que conectan varias wallets (y no son un servicio) se marcan como **posible wallet madre** 👑;
+    una wallet de la propia lista que fondeó con SOL a 2+ de las otras también;
+  - **mismo exchange** (hot wallets etiquetadas): pesa si las retiradas son casi a la vez (≤ 30 min) e importes parecidos (±15 %);
+  - **compras de las mismas coins en el mismo slot/bloque** y **casi a la vez** (≤ 10 min; más peso si es en la primera hora del lanzamiento).
+- Resultado: **grafo interactivo** (SVG propio, sin librerías; nodos arrastrables, líneas por tipo; al tocar una línea salen
+  las pruebas con fecha, importe y enlace a la tx en Solscan/explorador), **tabla de pares** con score 0-100 y el motivo en
+  castellano, lista de puentes, avisos cuando el historial se trunca y botón **«📤 Exportar grupo»** (mismo diálogo Axiom/GMGN;
+  incluye las wallets madre). Las comprobaciones se guardan en el box (tabla `checks`, privadas: `POST /api/checks`
+  `op: list | get | status | delete`) y se listan debajo.
+- **🔗** en cada fila, «🔗 Comprobar conexiones» en el detalle (wallet + sus vínculos) y en la barra de selección; también `#check=<w1>,<w2>`.
+- Topes (config.json → `connect`): 1000 tx por wallet (+ sus 25 primeras si se trunca), 5 intermediarios por wallet y 30 en
+  total a 2 saltos, 10 puentes revisados. Un puente con ≥ 1000 tx en ≤ 7 días se trata como **servicio/hub** (cuenta un 25 %
+  y nunca es «madre»). Coste típico en Solana: ~100 créditos Helius por wallet (3 wallets ≈ 310).
+- Etiquetas de entidades: hoy la lista de exchanges de `cex.py`. Hay un enchufe `ArkhamLabels` (desactivado) para añadir
+  Arkham si hay `ARKHAM_API_KEY`: basta con implementar `_fetch` y ponerlo en `implemented = True`.
+
 ## Alertas de Telegram (apagadas por defecto)
 Se activan desde la pestaña ⭐ Mis wallets. Vigilan las ⭐ cada N minutos y avisan cuando les entra ≥ X $ (o ≥ X SOL),
 opcionalmente solo si viene de un exchange, de un fondeador conocido o de otra wallet de la base.

@@ -10,7 +10,7 @@ MAX_ITEMS = 25
 
 
 def enqueue(c, kind, chain, items, origin="cli", job_id=None):
-    if kind not in ("tokens", "wallets"):
+    if kind not in ("tokens", "wallets", "connect"):
         raise ValueError("tipo inválido")
     if chain not in CHAINS and chain not in ("auto", "evm"):
         raise ValueError("chain inválida")
@@ -36,8 +36,10 @@ def reset_stuck(c):
     return n
 
 
-def next_pending(c):
-    r = c.execute("SELECT * FROM jobs WHERE status='pending' ORDER BY created LIMIT 1").fetchone()
+def next_pending(c, kinds=("tokens", "wallets")):
+    """Los escaneos van en el bucle principal; las comprobaciones de conexiones ('connect') en su propio hilo."""
+    q = ",".join("?" * len(kinds))
+    r = c.execute(f"SELECT * FROM jobs WHERE status='pending' AND kind IN ({q}) ORDER BY created LIMIT 1", tuple(kinds)).fetchone()
     return dict(r) if r else None
 
 
@@ -54,8 +56,20 @@ def run_job(c, job, on_progress=None):
     items = json.loads(job["items"])
     results, errors = [], []
     try:
-        sc = Scanner(c, progress=prog)
-        if job["kind"] == "tokens":
+        if job["kind"] == "connect":
+            from . import connect
+            try:
+                results.append(connect.run_job(c, job, prog))
+            except Exception as e:
+                log.exception("conexiones %s", jid)
+                connect.save(c, jid, job["chain"], items, "error", error=str(e)[:300])
+                raise
+            sc = None
+        else:
+            sc = Scanner(c, progress=prog)
+        if job["kind"] == "connect":
+            pass
+        elif job["kind"] == "tokens":
             for i, ca in enumerate(items, 1):
                 prog(f"token {i}/{len(items)}: {ca[:8]}…")
                 try:

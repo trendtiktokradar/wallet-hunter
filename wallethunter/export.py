@@ -64,6 +64,9 @@ def build(c=None):
     jobs = [dict(r) for r in c.execute("SELECT id, created, kind, chain, items, status, progress, message, started, finished, origin FROM jobs ORDER BY created DESC LIMIT 60")]
     for j in jobs:
         j["items"] = json.loads(j["items"] or "[]")
+        if j["kind"] == "connect":   # privado: en el json público solo la forma corta; el resultado lo sirve el box con PIN
+            j["items"] = [a[:4] + "…" + a[-4:] for a in j["items"]]
+            j["message"] = (j["message"] or "").split(":")[0] if j["status"] == "done" else j["message"]
     st = {"total": len(wallets), "pending": sum(1 for w in wallets if w["st"] == "pending"), "error": sum(1 for w in wallets if w["st"] == "error"),
           "bots_pre": sum(1 for w in wallets if w["pf"]), "fund_sync": sum(1 for w in wallets if "fondeo_sync" in w["tg"]), "smart": sum(1 for w in wallets if "smart" in w["tg"]),
           "bots": sum(1 for w in wallets if "bot" in w["tg"]), "snipers": sum(1 for w in wallets if "sniper" in w["tg"]),

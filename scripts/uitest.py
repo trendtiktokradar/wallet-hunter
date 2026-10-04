@@ -9,7 +9,11 @@ NO_BOX = os.environ.get("UITEST_NO_BOX") == "1"   # usa el data.json servido jun
 FAKE = {}
 GROUPS = []
 DELS = []          # llamadas a /api/delete (simuladas: nunca llegan al box real)
-PLAN = None if os.environ.get("UITEST_PLAN_NONE") == "1" else {}   # respuesta simulada de plan_token; None = el box no la da (el panel usa su estimación)
+PLAN = None if os.environ.get("UITEST_PLAN_NONE") == "1" else {}
+CHECK = json.load(open(os.environ.get("UITEST_CHECK") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "fixtures", "connect_result.json"), encoding="utf-8"))
+CONNECTS = []      # llamadas a /api/connect (simuladas)
+CHECKS = {}        # id -> nº de consultas de estado (pendiente → en curso → hecho)
+CK_STEPS = [("running", "leyendo historial 2/%d"), ("running", "2 saltos: fondeador de intermediarios 3/6"), ("running", "revisando puentes 2/3")]   # respuesta simulada de plan_token; None = el box no la da (el panel usa su estimación)
 
 async def fake_api(route):
     req = route.request
@@ -24,6 +28,25 @@ async def fake_api(route):
         if body.get("op") == "save":
             g = dict(body["group"]); g["id"] = "g%d" % (len(GROUPS) + 1); GROUPS.insert(0, g)
         out = {"ok": True, "groups": GROUPS}
+    elif req.url.endswith("/api/connect"):
+        CONNECTS.append(body)
+        ws = [w for w in body.get("wallets", "").split() if w]
+        cid = "ck%d" % len(CONNECTS); CHECKS[cid] = 0
+        out = {"ok": True, "id": cid, "chain": "solana" if body.get("chain") in (None, "auto") else body["chain"], "wallets": ws}
+    elif req.url.endswith("/api/checks"):
+        op, cid = body.get("op"), body.get("id")
+        if op == "list":
+            out = {"ok": True, "checks": [{"id": k, "created": int(time.time()) - 60, "chain": CHECK["chain"], "wallets": CHECK["wallets"], "status": "done" if n >= len(CK_STEPS) else "running", "progress": "", "summary": CHECK["summary"], "max_score": CHECK["pairs"][0]["score"], "credits": CHECK["credits"], "error": None} for k, n in CHECKS.items()]
+                   + [{"id": "old1", "created": int(time.time()) - 86400, "chain": CHECK["chain"], "wallets": CHECK["wallets"][:2], "status": "done", "progress": "terminado", "summary": "1 de 1 pares conectados", "max_score": 60, "credits": 180, "error": None}]}
+        elif op == "delete":
+            CHECKS.pop(cid, None); out = {"ok": True, "checks": []}
+        else:
+            n = CHECKS.get(cid, len(CK_STEPS)); CHECKS[cid] = n + 1
+            if n < len(CK_STEPS):
+                st, pr = CK_STEPS[n]
+                out = {"ok": True, "id": cid, "status": st, "progress": pr.replace("%d", str(len(CHECK["wallets"]))), "chain": CHECK["chain"], "wallets": CHECK["wallets"]}
+            else:
+                out = {"ok": True, "id": cid, "status": "done", "progress": "terminado", "chain": CHECK["chain"], "wallets": CHECK["wallets"], "result": dict(CHECK, id=cid)}
     elif req.url.endswith("/api/favs"):
         out = {"ok": True, "favs": []}
     elif req.url.endswith("/api/delete"):
@@ -189,6 +212,147 @@ async def delete_tests(pg, D, tag, mobile):
 FAILS = []
 SHOTS = None
 
+async def edge_point(pg, eid):
+    """Punto de pantalla en mitad de una línea del grafo (para hacer clic/tocar como una persona)."""
+    return await pg.evaluate("""(id) => { const p = document.querySelector('#ckSvg .ed[data-edge="' + id + '"] .eh'); p.scrollIntoView({block: 'center'});
+        const L = p.getTotalLength(), q = p.getPointAtLength(L / 2), m = p.getScreenCTM(); return [q.x * m.a + q.y * m.c + m.e, q.x * m.b + q.y * m.d + m.f]; }""", eid)
+
+async def connect_tests(pg, D, tag, mobile):
+    def ok(cond, msg):
+        print(("OK   " if cond else "FAIL ") + msg)
+        if not cond: FAILS.append(msg)
+    async def txt(sel): return " ".join((await pg.locator(sel).first.inner_text()).split())
+    R = CHECK
+    nm = "mobile" if mobile else "desktop"
+    await pg.evaluate("window.scrollTo(0,0)")
+    await pg.locator('#tabs button[data-tab="conn"]').click(); await pg.wait_for_timeout(300)
+    if mobile:   # (en escritorio la prueba de exportar ya pasó por Clusters: la pestaña recuerda la sub-sección)
+        ok(await pg.locator("#ckItems").is_visible() and await pg.locator('#connSeg [data-csub="check"].on').count() == 1, tag + "Conexiones abre en «Comprobar conexiones»")
+    await pg.locator('#connSeg [data-csub="check"]').click(); await pg.wait_for_timeout(200)
+    ok(await pg.locator("#ckItems").is_visible() and not await pg.locator("#connBox").is_visible(), tag + "sub-sección «Comprobar conexiones»")
+    await pg.locator('#connSeg [data-csub="clusters"]').click(); await pg.wait_for_timeout(300)
+    ok(await pg.locator("#connBox").is_visible() and not await pg.locator("#ckItems").is_visible() and "Clusters" in await txt("#connBox"), tag + "sub-sección Clusters conservada")
+    await pg.locator('#connSeg [data-csub="check"]').click(); await pg.wait_for_timeout(300)
+    # formulario
+    await pg.fill("#ckItems", R["wallets"][0])
+    ok("añade al menos otra" in await txt("#ckCount"), tag + "aviso con 1 sola wallet")
+    await pg.fill("#ckItems", "\n".join(R["wallets"]) + "\nhttps://solscan.io/account/" + R["wallets"][0])
+    ok(await txt("#ckCount") == "%d wallets · Solana" % len(R["wallets"]), tag + "detecta chain y quita duplicados: " + await txt("#ckCount"))
+    await pg.fill("#ckItems", R["wallets"][0] + " 0x" + "ab" * 20)
+    ok("mezcla Solana y EVM" in await txt("#ckCount"), tag + "aviso al mezclar Solana y EVM")
+    await pg.fill("#ckItems", "\n".join(R["wallets"]))
+    n0 = len(CONNECTS)
+    await pg.locator("#ckGo").click(); await pg.wait_for_timeout(700)
+    ok(len(CONNECTS) == n0 + 1 and CONNECTS[-1].get("pin") == "test-pin" and CONNECTS[-1]["wallets"].split() == R["wallets"] and CONNECTS[-1]["chain"] == "auto", tag + "envía al box: wallets + chain + PIN")
+    ok(await pg.locator(".ckprog").is_visible() and "Comprobando" in await txt(".ckprog"), tag + "progreso visible: " + (await txt(".ckprog"))[:70])
+    if shots and not mobile:
+        await pg.locator(".ckprog").screenshot(path=f"{SHOTS}/desktop-connections-progress.png")
+    try:
+        await pg.wait_for_selector("#ckRes .ckres", timeout=15000); await pg.wait_for_timeout(1200)   # (termina el scroll suave hasta el resultado)
+    except Exception:
+        pass
+    ok(await pg.locator("#ckRes .ckres").count() == 1 and not await pg.locator(".ckprog").count(), tag + "resultado mostrado al terminar")
+    if not await pg.locator("#ckRes .ckres").count():
+        return
+    nn, ne = await pg.locator("#ckSvg .nd").count(), await pg.locator("#ckSvg .ed").count()
+    ok(nn == len(R["nodes"]) and ne == len(R["edges"]), tag + f"grafo: {nn} nodos, {ne} líneas")
+    madre_n = sum(1 for n in R["nodes"] if n.get("madre"))
+    ok(await pg.locator("#ckSvg .nd.madre").count() == madre_n, tag + f"wallets madre resaltadas en el grafo ({madre_n})")
+    ok(await pg.locator("#ckSvg .nd.k-input").count() == len(R["wallets"]), tag + "tus wallets como nodos principales")
+    # clic en una línea → pruebas con fecha, importe y enlace a la tx
+    e = next((x for x in R["edges"] if x["type"] == "transfer"), R["edges"][0])
+    x, y = await edge_point(pg, e["id"])
+    if mobile: await pg.touchscreen.tap(x, y)
+    else: await pg.mouse.click(x, y)
+    await pg.wait_for_timeout(300)
+    ev = await txt("#ckEv")
+    hrefs = await pg.locator("#ckEv a.xl").evaluate_all("els=>els.map(e=>e.href)")
+    tx_base = (D or {}).get("chains", {}).get(R["chain"], {}).get("tx", "https://solscan.io/tx/")
+    ok(await pg.locator(f'#ckSvg .ed.on[data-edge="{e["id"]}"]').count() == 1, tag + f"clic en la línea {e['type']} la resalta")
+    ok(bool(hrefs) and all(h.startswith(tx_base) for h in hrefs) and e["ev"][0]["tx"] in hrefs[0], tag + f"pruebas con enlace a la tx ({len(hrefs)}): " + (hrefs[0][:60] if hrefs else "-"))
+    ok("/20" in ev and ("SOL" in ev or e["ev"][0].get("asset", "") in ev), tag + "pruebas con fecha e importe: " + ev[:90])
+    if shots:
+        await pg.evaluate("document.getElementById('toast').classList.add('hide');document.getElementById('tip').classList.add('hide')")
+        if mobile:
+            await pg.locator("#ckSvg").scroll_into_view_if_needed(); await pg.evaluate("window.scrollBy(0,-60)")
+            await pg.screenshot(path=f"{SHOTS}/mobile-connections.png")
+            await pg.locator("#ckEv").scroll_into_view_if_needed(); await pg.screenshot(path=f"{SHOTS}/mobile-connections-evidence.png")
+        else:
+            await pg.evaluate("document.getElementById('ckRes').scrollIntoView()")
+            await pg.screenshot(path=f"{SHOTS}/desktop-connections.png")
+            await pg.locator("#ckRes .ckres").screenshot(path=f"{SHOTS}/desktop-connections-full.png")
+    # tabla de pares
+    rows = pg.locator("#ckRes [data-ckpair]")
+    ok(await rows.count() == len(R["pairs"]), tag + f"tabla de pares ({await rows.count()})")
+    p0 = R["pairs"][0]
+    r0 = " ".join((await rows.nth(0).inner_text()).split())
+    ok(str(p0["score"]) in r0 and p0["reason"][:40] in r0, tag + "par con score y motivo en castellano: " + r0[:100])
+    await rows.nth(0).click(); await pg.wait_for_timeout(300)
+    ok(await pg.locator("#ckRes tr.on[data-ckpair]").count() == 1 and str(p0["score"]) in await txt("#ckEv") and await pg.locator("#ckSvg .nd.dim").count() > 0, tag + "clic en un par lo resalta en el grafo")
+    if await pg.locator("#ckEv [data-ckedge]").count():
+        await pg.locator("#ckEv [data-ckedge]").first.click(); await pg.wait_for_timeout(200)
+        ok(await pg.locator("#ckEv a.xl").count() > 0, tag + "desde el par: «ver pruebas»")
+    await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
+    ok(await pg.locator("#ckSvg .nd.dim").count() == 0, tag + "Escape quita el resaltado")
+    madres = [b for b in R["bridges"] if b["madre"]]
+    brt = await txt("#ckRes .ckres")
+    ok((not madres or "posible wallet madre" in brt) and all((b["label"] or b["address"][:4]) [:4] in brt for b in madres), tag + f"puentes «wallet madre» listados ({len(madres)})")
+    if any(i.get("truncated") for i in R["info"].values()):
+        ok(await pg.locator("#ckRes .warnbox", has_text="truncado").count() > 0, tag + "aviso de historial truncado")
+    # arrastrar un nodo (escritorio)
+    if not mobile:
+        g = pg.locator("#ckSvg .nd.k-input").first
+        t0 = await g.get_attribute("transform"); bb = await g.bounding_box()
+        await pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2 - 4); await pg.mouse.down()
+        await pg.mouse.move(bb["x"] + 60, bb["y"] + 40, steps=5); await pg.mouse.up(); await pg.wait_for_timeout(200)
+        ok(await pg.locator("#ckSvg .nd.k-input").first.get_attribute("transform") != t0, tag + "arrastrar un nodo lo mueve")
+    # exportar grupo (diálogo existente)
+    await pg.locator('#ckRes [data-export="check"]').click(); await pg.wait_for_timeout(300)
+    extra = [b["address"] for b in madres if b["address"] not in R["wallets"]]
+    gm = json.loads(await pg.locator("#out-gmgn").input_value()) if await pg.locator("#modal").is_visible() else []
+    ok([x["address"] for x in gm] == R["wallets"] + extra, tag + f"«Exportar grupo»: {len(R['wallets'])} wallets + {len(extra)} madre")
+    await pg.keyboard.press("Escape")
+    # guardadas
+    ok(await pg.locator("#ckSaved [data-ckopen]").count() >= 1, tag + f"lista de comprobaciones guardadas ({await pg.locator('#ckSaved [data-ckopen]').count()})")
+    await pg.locator("#ckResX").click(); await pg.wait_for_timeout(200)
+    ok(await pg.locator("#ckRes .ckres").count() == 0, tag + "cerrar resultado")
+    await pg.locator("#ckSaved [data-ckopen]").first.click(); await pg.wait_for_timeout(800)
+    ok(await pg.locator("#ckRes .ckres").count() == 1, tag + "abrir una comprobación guardada")
+    pg.once("dialog", lambda d: asyncio.ensure_future(d.accept()))
+    nb = await pg.locator("#ckSaved [data-ckdel]").count()
+    await pg.locator("#ckSaved [data-ckdel]").first.click(); await pg.wait_for_timeout(600)
+    ok(await pg.locator("#ckSaved [data-ckdel]").count() < nb, tag + "borrar una comprobación guardada")
+    # re-render del panel (cada tick) no borra el formulario ni el resultado
+    await pg.fill("#ckItems", "abc"); await pg.evaluate("document.querySelector('#tabs button[data-tab=\"conn\"]').click()"); await pg.wait_for_timeout(300)
+    ok(await pg.locator("#ckItems").input_value() == "abc", tag + "el formulario no se borra al refrescar")
+    # Trabajos
+    await pg.locator('#tabs button[data-tab="jobs"]').click(); await pg.wait_for_timeout(300)
+    if await pg.locator("#jobsBox [data-ckjob]").count():
+        ok("🔗 Conexiones" in await txt("#jobsBox"), tag + "Trabajos muestra el tipo «🔗 Conexiones»")
+        await pg.locator("#jobsBox [data-ckjob]").first.click(); await pg.wait_for_timeout(1000)
+        ok(await pg.locator("#ckRes .ckres").is_visible(), tag + "Trabajos → «Ver resultado» abre la comprobación")
+    else:
+        print("--   " + tag + "no hay trabajos de conexiones en los datos: prueba de Trabajos omitida")
+    # «comprobar conexiones» desde una fila y desde el detalle
+    if D:
+        await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(300)
+        k = await pg.locator("#tbl tbody tr[data-k]").first.get_attribute("data-k")
+        w = next(x for x in D["wallets"] if x["c"] + ":" + x["a"] == k)
+        exp = [w["a"]] + [a for a in dict.fromkeys(l[0] for l in (w.get("lk") or [])) if a != w["a"]]
+        await pg.locator(f'#tbl tbody tr[data-k="{k}"] [data-ck]').click(); await pg.wait_for_timeout(400)
+        val = (await pg.locator("#ckItems").input_value()).split()
+        ok(await pg.locator("#ckItems").is_visible() and val == exp[:10] and not await pg.locator("#drawer").is_visible(), tag + f"🔗 en la fila rellena la wallet + sus vínculos ({len(val)})")
+        await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(300)
+        await pg.locator("#tbl tbody tr[data-k]").nth(1).click(); await pg.wait_for_timeout(300)
+        await pg.locator("#drawer [data-ck]").click(); await pg.wait_for_timeout(400)
+        k1 = await pg.locator("#tbl tbody tr[data-k]").nth(1).get_attribute("data-k") if await pg.locator("#tbl tbody tr[data-k]").count() > 1 else ""
+        ok(await pg.locator("#ckItems").is_visible() and (await pg.locator("#ckItems").input_value()).split()[0] == k1.split(":", 1)[-1] and not await pg.locator("#drawer").is_visible(), tag + "«🔗 Comprobar conexiones» en el detalle")
+        if shots and not mobile:
+            await pg.locator("#connCheck .box").first.screenshot(path=f"{SHOTS}/desktop-connections-prefill.png")
+    await pg.fill("#ckItems", "")
+    await pg.locator('#tabs button[data-tab="wallets"]').click(); await pg.wait_for_timeout(200)
+
+
 async def main():
     global SHOTS
     SHOTS = shots
@@ -207,7 +371,10 @@ async def main():
                     u = route.request.url
                     if "/api/" in u: return await fake_api(route)
                     if "/health" in u: body = json.dumps({"ok": True, "pin_set": True, "t": int(time.time())})
-                    else: body = open(os.environ.get("UITEST_DATA", "/tmp/whweb/data.json"), encoding="utf-8").read()
+                    else:
+                        dd = json.load(open(os.environ.get("UITEST_DATA", "/tmp/whweb/data.json"), encoding="utf-8"))
+                        dd.setdefault("jobs", []).insert(0, {"id": "old1", "created": int(time.time()) - 3600, "kind": "connect", "chain": "solana", "items": [w[:4] + "…" + w[-4:] for w in CHECK["wallets"]], "status": "done", "progress": "terminado", "message": "%d wallets (Solana)" % len(CHECK["wallets"]), "started": int(time.time()) - 3600, "finished": int(time.time()) - 3550, "origin": "web"})
+                        body = json.dumps(dd)
                     await route.fulfill(status=200, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"}, body=body)
                 await ctx.route("http://127.0.0.1:18795/**", fake_box)
             pg = await ctx.new_page()
@@ -307,6 +474,7 @@ async def main():
                 await pg.locator("#selClear").click()
                 # desde un cluster y un bundle
                 await pg.locator('#tabs button[data-tab="conn"]').click(); await pg.wait_for_timeout(300)
+                await pg.locator('#connSeg [data-csub="clusters"]').click(); await pg.wait_for_timeout(300)
                 if await pg.locator('#connBox [data-export^="cluster:"]').count():
                     await pg.locator('#connBox [data-export^="cluster:"]').first.click(); await pg.wait_for_timeout(300)
                     n1 = len(json.loads(await pg.locator("#out-gmgn").input_value()))
@@ -338,6 +506,7 @@ async def main():
                 if shots:
                     await pg.evaluate("document.getElementById('tip').classList.add('hide')"); await pg.screenshot(path=shots + "/mobile-export.png")
                 await pg.keyboard.press("Escape")
+            await connect_tests(pg, D, tag, mobile)
             if D and len(D["tokens"]) >= 1:
                 await coin_tests(pg, D, tag, mobile)
             if D and not mobile and shots:

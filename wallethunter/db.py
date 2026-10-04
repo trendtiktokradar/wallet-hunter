@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT, emoji TEXT, chain TEXT, wallets TEXT, source TEXT, created INTEGER, updated INTEGER);
 -- lista de bloqueo opcional: wallets borradas que no se vuelven a añadir al re-escanear ese coin (token '*' = cualquiera)
 CREATE TABLE IF NOT EXISTS blocklist(chain TEXT, address TEXT, token TEXT, added INTEGER, PRIMARY KEY(chain, address, token));
+-- comprobaciones de «Conexiones entre wallets» (privadas: las sirve el box con PIN; el id es el del trabajo)
+CREATE TABLE IF NOT EXISTS checks(id TEXT PRIMARY KEY, created INTEGER, chain TEXT, wallets TEXT, status TEXT, result TEXT, credits INTEGER, summary TEXT, max_score INTEGER, error TEXT);
 CREATE TABLE IF NOT EXISTS aliases(chain TEXT, address TEXT, alias TEXT, updated INTEGER, PRIMARY KEY(chain, address));
 """
 
