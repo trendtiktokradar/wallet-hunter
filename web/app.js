@@ -17,7 +17,8 @@
 
   function load(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
   function save(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  var R = window.WHRules;
+  function esc(s) { return R.esc(s); }
   function short(a) { return a ? a.slice(0, 5) + "…" + a.slice(-4) : ""; }
   function num(x, d) { if (x == null || isNaN(x)) return "–"; var a = Math.abs(x); if (a >= 1e6) return (x / 1e6).toFixed(1).replace(".", ",") + "M"; if (a >= 1e4) return (x / 1e3).toFixed(1).replace(".", ",") + "k"; return x.toFixed(d == null ? 2 : d).replace(".", ","); }
   function signed(x, d, suf) { if (x == null) return "–"; return '<span class="' + (x >= 0 ? "pos" : "neg") + '">' + (x >= 0 ? "+" : "") + num(x, d) + (suf || "") + "</span>"; }
@@ -283,23 +284,21 @@
       if (act && (!w.la || NOW() - w.la > act * 86400)) return false;
       if (fav && !isFav(w)) return false;
       if (hide && (w.tg.indexOf("bot") >= 0 || w.tg.indexOf("bundle") >= 0 || w.tg.indexOf("insider") >= 0 || w.pf)) return false;
-      for (var i = 0; i < S.tags.length; i++) if (w.tg.indexOf(S.tags[i]) < 0) return false;
-      for (var j = 0; j < S.xtags.length; j++) if (S.xtags[j] !== skipX && w.tg.indexOf(S.xtags[j]) >= 0) return false;
+      if (!R.passesTags(w.tg, S.tags, S.xtags, skipX)) return false;
       return true;
     });
   }
-  var NOISE = ["bot", "sniper", "bundle", "one_hit", "insuficiente", "una_vez"];   // preset «Quitar ruido» (se excluyen)
-  function tagState(id) { return S.tags.indexOf(id) >= 0 ? "inc" : S.xtags.indexOf(id) >= 0 ? "exc" : ""; }
+  var NOISE = R.NOISE;   // preset «Quitar ruido» (se excluyen)
+  function tagState(id) { return R.tagState(S.tags, S.xtags, id); }
   function cycleTag(id) {   // 1.º clic: con (✓) · 2.º: sin (✕) · 3.º: quitar
-    var st = tagState(id);
-    S.tags = S.tags.filter(function (x) { return x !== id; }); S.xtags = S.xtags.filter(function (x) { return x !== id; });
-    if (st === "") S.tags.push(id); else if (st === "inc") S.xtags.push(id);
+    var n = R.cycle(S.tags, S.xtags, id);
+    S.tags = n.tags; S.xtags = n.xtags;
   }
-  function noiseOn() { var have = NOISE.filter(function (id) { return D.tagIdx[id]; }); return have.length > 0 && have.every(function (id) { return S.xtags.indexOf(id) >= 0; }); }
+  function noiseOn() { return R.noiseOn(S.xtags, NOISE, D.tagIdx); }
   function toggleNoise() {
-    var on = noiseOn();
-    NOISE.forEach(function (id) { if (!D.tagIdx[id]) return; S.tags = S.tags.filter(function (x) { return x !== id; }); S.xtags = S.xtags.filter(function (x) { return x !== id; }); if (!on) S.xtags.push(id); });
-    toast(on ? "Ruido visible otra vez" : "Ocultando " + NOISE.filter(function (id) { return D.tagIdx[id]; }).map(function (id) { return esc(tagDef(id).label); }).join(", "));
+    var n = R.toggleNoise(S.tags, S.xtags, NOISE, D.tagIdx);
+    S.tags = n.tags; S.xtags = n.xtags;
+    toast(n.hidden ? "Ocultando " + NOISE.filter(function (id) { return D.tagIdx[id]; }).map(function (id) { return esc(tagDef(id).label); }).join(", ") : "Ruido visible otra vez");
   }
   function renderChips(rows) {
     // todas las etiquetas siempre visibles; orden estable (por frecuencia en la chain elegida, sin filtros)

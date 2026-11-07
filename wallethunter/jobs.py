@@ -42,10 +42,20 @@ def reset_stuck(c):
     return n
 
 
-def next_pending(c, kinds=("tokens", "wallets")):
-    """Los escaneos van en el bucle principal; las comprobaciones de conexiones ('connect') en su propio hilo."""
+def next_pending(c, kinds=("tokens", "wallets"), created_after=None):
+    """Pendiente más antiguo de esos tipos.
+
+    created_after: solo trabajos creados en ese instante o después. El modo bajo demanda
+    lo usa para no vaciar colas que ya estaban en la base.
+    """
     q = ",".join("?" * len(kinds))
-    r = c.execute(f"SELECT * FROM jobs WHERE status='pending' AND kind IN ({q}) ORDER BY created LIMIT 1", tuple(kinds)).fetchone()
+    sql = f"SELECT * FROM jobs WHERE status='pending' AND kind IN ({q})"
+    args = list(kinds)
+    if created_after is not None:
+        sql += " AND created >= ?"
+        args.append(int(created_after))
+    sql += " ORDER BY created LIMIT 1"
+    r = c.execute(sql, tuple(args)).fetchone()
     return dict(r) if r else None
 
 

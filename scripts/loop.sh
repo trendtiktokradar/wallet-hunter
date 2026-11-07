@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Servicio 24/7 en el box (sin IA): API + túnel + cola de escaneos + alertas + publicación.
+# Modo COMPLETO (no es el arranque por defecto): API + túnel + cola + vigilancia + publicación.
+# Arranque explícito: scripts/service.sh full
+# El arranque normal es scripts/service.sh start → scripts/ondemand.sh
 # Si el proceso de Python se cae, se relanza a los 15 s. Lo que estaba "en curso" vuelve a la cola.
 #   Arrancar:  scripts/service.sh start      Parar: scripts/service.sh stop      Estado: scripts/service.sh status
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

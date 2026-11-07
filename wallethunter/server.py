@@ -28,18 +28,18 @@ DELETE_LOCK = threading.Lock()
 CONNECT_WAKE = threading.Event()
 
 
-def start_connect_worker():
-    """Hilo propio para las comprobaciones de conexiones: no esperan a que acabe un escaneo largo."""
+def start_connect_worker(created_after=None):
+    """Hilo de conexiones y del mapa. created_after ignora trabajos más viejos que el arranque."""
     def work():
         c = db.connect()
         while True:
             try:
-                job = jobs.next_pending(c, kinds=("connect", "map"))
+                job = jobs.next_pending(c, kinds=("connect", "map"), created_after=created_after)
                 while job:
                     WAKE.set()
                     jobs.run_job(c, job)
-                    WAKE.set()   # el bucle republica data.json (Trabajos)
-                    job = jobs.next_pending(c, kinds=("connect", "map"))
+                    WAKE.set()   # quien publique (el bucle completo) verá el cambio; el modo bajo demanda no publica
+                    job = jobs.next_pending(c, kinds=("connect", "map"), created_after=created_after)
             except Exception:
                 log.exception("hilo de conexiones")
             CONNECT_WAKE.wait(30)
@@ -72,7 +72,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/health"):
-            return self._send(200, {"ok": True, "pin_set": pinmod.is_set(), "t": int(time.time())})
+            return self._send(200, {"ok": True, "pin_set": pinmod.is_set(), "t": int(time.time()),
+                                     "mode": os.environ.get("WH_MODE") or "unset"})
         if self.path.split("?")[0] == "/data.json":
             from .config import DATA_JSON
             try:

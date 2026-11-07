@@ -222,7 +222,8 @@ class TestMap(unittest.TestCase):
 
     def test_token_receipt_is_not_a_swap(self):
         buy = rpc_tx("buy1", 10, NOW - 100, A, native={A: (5 * L, 4 * L), POOL: (L, 2 * L)},
-                     tokens=[(A, MINT, 0, 1000), (POOL, MINT, 5000, 4000)])
+                     tokens=[(A, MINT, 0, 1000), (POOL, MINT, 5000, 4000)],
+                     programs=["6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"])
         recv = rpc_tx("recv1", 11, NOW - 90, C, native={C: (L, L), A: (L, L)},
                       tokens=[(C, MINT, 50, 0), (A, MINT, 0, 50)])
         d_buy, d_recv = deltas.from_rpc(buy), deltas.from_rpc(recv)
@@ -248,7 +249,7 @@ class TestMap(unittest.TestCase):
         early = {"events": [
             {"address": A, "kind": "swap_buy", "verified": True, "ts": NOW - 100, "tx": SIG, "url": "https://solscan.io/tx/" + SIG, "token_amount": 3, "native_amount": 0.4},
             {"address": B, "kind": "token_in", "verified": False, "ts": NOW - 90, "tx": "recv", "url": None, "token_amount": 1, "native_amount": None},
-        ], "truncated": True, "unavailable": None}
+        ], "truncated": True, "unavailable": None, "read": "earliest", "complete": False}
         src = Src({A: page([])}, early={MINT: early})
         res = run(self.c, [A], src, mode="coin", coin=MINT, scope="first_buyers")
         self.assertEqual(res["coin"]["axiom"], "https://axiom.trade/meme/" + POOL)
@@ -256,9 +257,37 @@ class TestMap(unittest.TestCase):
         self.assertEqual([b["address"] for b in res["coin"]["buyers"]], [A])
         self.assertEqual([r["address"] for r in res["coin"]["receipts"]], [B])
         self.assertTrue(res["coin"]["buyers_truncated"])
-        self.assertIn("no son todos los holders", " ".join(res["coverage"]["notes"]).lower())
+        self.assertIn("no es la lista de holders", " ".join(res["coverage"]["notes"]).lower())
+        self.assertTrue(res["coin"]["from_start"])
         with self.assertRaises(ValueError):
             walletmap.clean_request({"mode": "coin", "coin": MINT, "scope": "interval", "from_ts": NOW - 30 * 86400, "to_ts": NOW, "wallets": []})
+
+    def test_double_transfer_is_not_a_verified_buy(self):
+        tx = rpc_tx("dbl", 12, NOW - 80, A, native={A: (5 * L, 4 * L), C: (L, 2 * L)},
+                    tokens=[(C, MINT, 10, 0), (A, MINT, 0, 10)])
+        d = deltas.from_rpc(tx)
+        self.assertIsNone(d.dex)
+        rows = walletmap.rows_from_deltas(A, [d])
+        self.assertEqual(rows[0]["kind"], "unconfirmed_buy")
+        self.assertFalse(rows[0]["swap"]["verified"])
+        src = Src({A: page(rows)})
+        res = run(self.c, [A], src, mode="coin", coin=MINT)
+        ev = res["by_wallet"][A]["coin_events"][0]
+        self.assertFalse(ev["verified"])
+        self.assertIn("no se confirma", ev["label"])
+        self.assertNotEqual(res["by_wallet"][A]["coin_label"], "Compró · verificado")
+        self.assertEqual(res["by_wallet"][A]["swaps"] if False else walletmap._swaps(rows, A), [])
+
+    def test_recent_mint_reads_are_not_called_first_buyers(self):
+        early = {"events": [
+            {"address": A, "kind": "swap_buy", "verified": True, "ts": NOW - 10, "tx": SIG, "token_amount": 1, "native_amount": 0.2},
+        ], "read": "latest", "truncated": True, "complete": False}
+        src = Src({A: page([])}, early={MINT: early})
+        res = run(self.c, [A], src, mode="coin", coin=MINT, scope="first_buyers")
+        self.assertEqual(res["coin"]["buyers"], [])
+        self.assertFalse(res["coin"]["from_start"])
+        blob = ((res["coin"]["note"] or "") + " " + (res["coin"]["buyer_label"] or "")).lower()
+        self.assertIn("no son los primeros compradores", blob)
 
     def test_overlap_threshold(self):
         def swaps(addr, tokens, ts=NOW - 1000):
@@ -360,9 +389,13 @@ class TestMap(unittest.TestCase):
         run(self.c, [B], src)
         self.assertEqual(db.aliases(self.c)[0]["alias"], "<b>Wallet A</b>")
         self.assertEqual(db.groups(self.c)[0]["wallets"], [A, B])
-        hid = walletmap.save_hypothesis(self.c, A, B, res["coverage"]["summary"], {"overlap": 0})
+        hid = walletmap.save_hypothesis(self.c, A, B, "zz-privado-mapa hipótesis <script>", {"overlap": 0})
         self.assertEqual(walletmap.list_hypotheses(self.c)[0]["id"], hid)
         self.assertEqual(walletmap.list_hypotheses(self.c)[0]["kind"], "hipótesis")
+        published = json.dumps(export.build(self.c))
+        self.assertNotIn("zz-privado-mapa", published)
+        self.assertNotIn("<b>Wallet A</b>", published)
+        self.assertNotIn("<script>", published)
 
     def test_job_is_private_and_unavailable_without_key(self):
         spec = walletmap.clean_request({"wallets": [A, B], "hops": 1})
@@ -399,6 +432,7 @@ class TestMap(unittest.TestCase):
             html = f.read()
         self.assertIn("Mapa de Wallets", html)
         self.assertIn("map.js", html)
+        self.assertIn("rules.js", html)
         Lims = walletmap.limits()
         self.assertEqual(Lims["window_days"], 30)
         self.assertEqual(Lims["min_native_sol"], 0.05)

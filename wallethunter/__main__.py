@@ -5,7 +5,9 @@
   python3 -m wallethunter export
   python3 -m wallethunter set-pin            (lee el PIN de la variable NEW_PIN o pregunta sin mostrarlo)
   python3 -m wallethunter enqueue <tokens|wallets> <chain> <items...>
-  python3 -m wallethunter loop               (servicio: API + túnel + cola + alertas + publicación)
+  python3 -m wallethunter serve              (bajo demanda: API + map/connect nuevos + túnel; sin vigilancia ni publicación)
+  python3 -m wallethunter publish-link       (una vez: escribe solo box.json con la URL del túnel)
+  python3 -m wallethunter loop               (modo completo antiguo: cola, vigilancia, publicación periódica)
   python3 -m wallethunter status
 """
 import json, logging, os, sys, time, subprocess, getpass
@@ -36,6 +38,7 @@ def loop():
     n = jobs.reset_stuck(c)
     if n:
         log.info("%s trabajos reanudados", n)
+    os.environ["WH_MODE"] = "full"
     server.start_server()
     server.start_connect_worker(); watcher.start_worker()
     tun = server.Tunnel() if os.environ.get("WH_TUNNEL", "1") == "1" else None
@@ -68,6 +71,60 @@ def loop():
         except Exception:
             log.exception("vuelta del bucle")
         server.WAKE.wait(cfg().get("poll_seconds", 120))
+        server.WAKE.clear()
+
+
+def arm_on_demand(c):
+    """API + worker de map/connect creados desde este instante + túnel si WH_TUNNEL no es 0.
+
+    No arranca vigilancia, Telegram, la cola de escaneos ni la publicación.
+    """
+    from . import server
+    cutoff = int(time.time())
+    os.environ["WH_MODE"] = "on-demand"
+    server.start_server()
+    server.start_connect_worker(created_after=cutoff)
+    tun = server.Tunnel() if os.environ.get("WH_TUNNEL", "1") != "0" else None
+    return cutoff, tun
+
+
+def on_demand_tick(c, tun):
+    """Mantiene el túnel y anota la URL en la base local. No publica ni mira la cola de escaneos."""
+    from . import db, pin
+    url = tun.ensure() if tun else None
+    prev = db.kv_get(c, "box") or {}
+    payload = {"url": url, "updated": int(time.time()), "pin_set": pin.is_set(), "mode": "on-demand"}
+    if payload["url"] != prev.get("url") or payload["pin_set"] != prev.get("pin_set") or prev.get("mode") != "on-demand":
+        db.kv_set(c, "box", payload)
+        logging.getLogger("wh").info("enlace local del túnel: %s (no se publica solo)", url or "aún sin URL")
+    return url
+
+
+def box_link_payload(c):
+    """JSON de box.json: solo la URL del túnel. Sin alias, sin hipótesis, sin wallets."""
+    from . import db
+    box = db.kv_get(c, "box") or {}
+    url = box.get("url") or ""
+    if not str(url).startswith("https://"):
+        raise ValueError("no hay URL https de túnel en la base local; arranca el modo bajo demanda y espera a cloudflared")
+    return {"url": url, "updated": box.get("updated"), "pin_set": bool(box.get("pin_set")), "mode": "on-demand"}
+
+
+def serve():
+    """Modo bajo demanda. Se queda en primer plano hasta que el proceso termina."""
+    from . import db, server
+    c = db.connect()
+    cutoff, tun = arm_on_demand(c)
+    pending = c.execute("SELECT COUNT(*) FROM jobs WHERE status='pending' AND created < ?", (cutoff,)).fetchone()[0]
+    logging.getLogger("wh").info(
+        "modo bajo demanda desde %s. Trabajos anteriores en cola: %s (no se ejecutan). Sin vigilancia ni publicación periódica.",
+        cutoff, pending)
+    while True:
+        try:
+            on_demand_tick(c, tun)
+        except Exception:
+            logging.getLogger("wh").exception("bajo demanda")
+        server.WAKE.wait(15)
         server.WAKE.clear()
 
 
@@ -106,6 +163,17 @@ def main(argv):
         print(jobs.enqueue(c, args[0], args[1], parse_items(" ".join(args[2:]))))
     elif cmd == "loop":
         loop()
+    elif cmd == "serve":
+        serve()
+    elif cmd == "publish-link":
+        from .config import ROOT
+        payload = box_link_payload(c)
+        path = os.path.join(ROOT, "state", "box-link.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(payload, f)
+        r = subprocess.run([os.path.join(ROOT, "scripts", "publish-box.sh"), path], text=True)
+        return r.returncode
     elif cmd == "status":
         print(json.dumps(export.build(c)["stats"], indent=1)); print(json.dumps(export.key_status()))
     else:

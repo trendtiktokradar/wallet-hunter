@@ -22,8 +22,9 @@ Definiciones que el panel repite junto al grafo
   Compartir un servicio, un puente o un exchange no es propiedad común.
 - Swap verificado: `deltas.extract` ve el token y la contrapartida (SOL/stable) en sentidos
   opuestos. Una transferencia de token sin esa contrapartida no es compra ni venta.
-- Coin: la CA solo fija el contexto. «Primeros compradores» lee como máximo
-  `first_buyers_tx_cap` transacciones antiguas del mint (no todos los holders). Un intervalo
+- Coin: la CA solo fija el contexto. «Inicio del mint» pide las transacciones más antiguas,
+  como máximo `first_buyers_tx_cap`, y solo llama compra a un swap con programa identificado.
+  Si la lectura no está anclada al inicio, no se presentan como primeros compradores. Un intervalo
   no puede pasar de `interval_max_days` ni de `interval_tx_cap` transacciones recientes.
   El enlace de Axiom se construye solo si hay un pool devuelto por la base o por el mercado;
   si no hay pool, no hay enlace.
@@ -266,20 +267,37 @@ def _is_serviceish(ent):
     return ent["kind"] in ("service", "cex", "ignored")
 
 
+def swap_mark(delta, side):
+    """Compra/venta verificada solo si el parser vio un programa de swap (delta.dex).
+
+    Que en la misma tx cambien el token y el SOL no basta: una transferencia doble
+    también cuadra así y se queda sin confirmar.
+    """
+    verified = bool(getattr(delta, "dex", None))
+    if verified:
+        kind = "swap_buy" if side == "buy" else "swap_sell"
+        label = ("Compró · verificado (" + delta.dex + ")") if side == "buy" else ("Vendió · verificado (" + delta.dex + ")")
+    else:
+        kind = "unconfirmed_buy" if side == "buy" else "unconfirmed_sell"
+        label = "Token y SOL se mueven en la misma tx, sin programa de swap identificado: no se confirma como " + ("compra" if side == "buy" else "venta")
+    return kind, verified, label
+
+
 def rows_from_deltas(addr, deltas):
-    """Convierte deltas ya parseados en filas del mapa. El swap queda marcado; el resto es transferencia."""
+    """Convierte deltas ya parseados en filas del mapa. El swap verificado exige delta.dex."""
     rows = []
     for d in deltas or []:
         swaps, trs = extract(d, addr)
         if swaps:
             sw = dict(swaps[0])
             side = sw["side"]
+            kind, verified, _label = swap_mark(d, side)
             rows.append({
                 "tx": d.tx, "ts": d.ts, "from": addr if side == "buy" else sw.get("counterparty"),
                 "to": sw.get("counterparty") if side == "buy" else addr,
                 "asset": NATIVE, "amount": float(sw.get("native_amount") or 0),
-                "kind": "swap_buy" if side == "buy" else "swap_sell",
-                "swap": {"side": side, "token": sw["token"], "token_amount": sw.get("token_amount"), "native_amount": sw.get("native_amount"), "wallet": addr},
+                "kind": kind,
+                "swap": {"side": side, "token": sw["token"], "token_amount": sw.get("token_amount"), "native_amount": sw.get("native_amount"), "wallet": addr, "verified": verified, "dex": getattr(d, "dex", None)},
             })
             continue
         for t in trs:
@@ -483,7 +501,8 @@ class HeliusMapSource:
             reached = not r.get("paginationToken")
         events = events_from_deltas(deltas, mint)
         note = None if reached else "El tope de transacciones no cubre todo el tramo pedido. No se sigue paginando."
-        return {"events": events, "truncated": not reached, "unavailable": note}
+        return {"events": events, "truncated": not reached, "unavailable": note,
+                "read": "earliest" if order == "asc" else "latest", "complete": reached, "tx_cap": limit}
 
 
 def events_from_deltas(deltas, mint):
@@ -501,10 +520,12 @@ def events_from_deltas(deltas, mint):
             hit = False
             for sw in swaps:
                 if sw["token"] == mint:
+                    kind, verified, label = swap_mark(d, sw["side"])
                     found.append({
-                        "address": o, "kind": "swap_buy" if sw["side"] == "buy" else "swap_sell",
-                        "verified": True, "ts": sw["ts"], "tx": sw["tx"], "url": tx_url(sw["tx"]),
+                        "address": o, "kind": kind, "verified": verified, "label": label,
+                        "ts": sw["ts"], "tx": sw["tx"], "url": tx_url(sw["tx"]),
                         "token_amount": sw.get("token_amount"), "native_amount": sw.get("native_amount"),
+                        "dex": getattr(d, "dex", None),
                     })
                     hit = True
             if hit:
@@ -598,7 +619,9 @@ def _swaps(rows, addr):
     out = []
     for r in rows:
         sw = r.get("swap")
-        if not sw or not sw.get("token"):
+        if not sw or not sw.get("token") or sw.get("verified") is False:
+            continue
+        if not str(r.get("kind") or "").startswith("swap_"):
             continue
         if sw.get("wallet") not in (None, addr) and addr not in (r.get("from"), r.get("to")):
             continue
@@ -636,7 +659,7 @@ def _link_sets(by_wallet, entities):
                 continue
             if _is_serviceish(entities.get(other, {"kind": "unidentified"})):
                 continue
-            if m.get("kind") in ("swap_buy", "swap_sell"):
+            if str(m.get("kind") or "").startswith("swap_") or str(m.get("kind") or "").startswith("unconfirmed_"):
                 continue
             direct[addr].add(other)
     return direct, funders
@@ -737,7 +760,7 @@ def _movement_public(c, addr, r):
         "amount": r.get("amount"), "asset": r.get("asset"),
         "token": swap.get("token") if kind.startswith("swap") else (r.get("asset") if r.get("asset") not in (NATIVE, None) else None),
         "token_amount": swap.get("token_amount"),
-        "kind": kind, "verified_swap": kind in ("swap_buy", "swap_sell"),
+        "kind": kind, "verified_swap": kind in ("swap_buy", "swap_sell") and swap.get("verified") is not False,
         "ts": r.get("ts"), "tx": r.get("tx"), "url": tx_url(r.get("tx")),
     }
 
@@ -746,11 +769,17 @@ def _coin_events_for(rows, addr, mint):
     ev = []
     for r in rows:
         sw = r.get("swap") or {}
-        if r.get("kind") in ("swap_buy", "swap_sell") and sw.get("token") == mint and addr in (r.get("from"), r.get("to"), sw.get("wallet")):
+        if r.get("kind") in ("swap_buy", "swap_sell", "unconfirmed_buy", "unconfirmed_sell") and sw.get("token") == mint and addr in (r.get("from"), r.get("to"), sw.get("wallet")):
+            verified = r["kind"].startswith("swap_") and sw.get("verified") is not False
+            side = sw.get("side") or ("buy" if "buy" in r["kind"] else "sell")
+            if verified:
+                label = "Compró · verificado" + (" (" + sw["dex"] + ")" if sw.get("dex") else "") if side == "buy" else "Vendió · verificado" + (" (" + sw["dex"] + ")" if sw.get("dex") else "")
+            else:
+                label = "Token y SOL en la misma tx, sin programa de swap: no se confirma como " + ("compra" if side == "buy" else "venta")
             ev.append({
-                "kind": r["kind"], "verified": True, "ts": r.get("ts"), "tx": r.get("tx"), "url": tx_url(r.get("tx")),
+                "kind": r["kind"], "verified": verified, "ts": r.get("ts"), "tx": r.get("tx"), "url": tx_url(r.get("tx")),
                 "token_amount": sw.get("token_amount"), "native_amount": sw.get("native_amount") or r.get("amount"),
-                "label": "Compró · verificado" if r["kind"] == "swap_buy" else "Vendió · verificado",
+                "label": label,
             })
         elif r.get("asset") == mint and addr in (r.get("from"), r.get("to")) and not sw:
             incoming = r.get("to") == addr
@@ -772,6 +801,8 @@ def _highlight(events):
         return "Compró · verificado"
     if "swap_sell" in kinds:
         return "Vendió · verificado"
+    if "unconfirmed_buy" in kinds or "unconfirmed_sell" in kinds:
+        return "Intercambio no confirmado"
     if "token_in" in kinds:
         return "Recibió token"
     if "token_out" in kinds:
@@ -795,6 +826,42 @@ def _read_wallet(source, addr, before, L, now):
         "error": data.get("error"), "parsed": False if data.get("error") else bool(data.get("parsed", True)),
         "dropped_old": dropped_old,
     }
+
+
+def split_mint_events(events, scope, read, complete, tx_cap, cap_wallets):
+    """Separa compras verificadas de recepciones. Sin lectura anclada al inicio, no hay «primeros compradores»."""
+    buyers, receipts, unconfirmed = [], [], []
+    seen_b, seen_r = set(), set()
+    for ev in events or []:
+        kind = ev.get("kind")
+        addr = ev.get("address")
+        if kind == "swap_buy" and ev.get("verified", True) and addr not in seen_b:
+            seen_b.add(addr)
+            buyers.append(ev)
+        elif kind == "token_in" and addr not in seen_r and addr not in seen_b:
+            seen_r.add(addr)
+            receipts.append(ev)
+        elif kind in ("unconfirmed_buy", "unconfirmed_sell") and addr not in seen_b:
+            unconfirmed.append(ev)
+    buyers, receipts = buyers[: int(cap_wallets)], receipts[: int(cap_wallets)]
+    if scope == "context":
+        return {"buyers": [], "receipts": [], "unconfirmed": [], "label": None, "note": None}
+    if scope != "first_buyers":
+        label = "Actividad del mint en el intervalo pedido, con el tope de transacciones. No es el historial completo."
+        return {"buyers": buyers, "receipts": receipts, "unconfirmed": unconfirmed, "label": label, "note": None}
+    if read != "earliest":
+        return {
+            "buyers": [], "receipts": [], "unconfirmed": unconfirmed,
+            "label": "Esta lectura no está anclada al inicio del mint. No son los primeros compradores históricos.",
+            "note": "Hacen falta las transacciones más antiguas del mint (orden ascendente). Unas transacciones recientes no se presentan como primeros compradores.",
+        }
+    label = (
+        f"Compras con programa de swap visto en las primeras {tx_cap} transacciones del mint. "
+        "No es la lista de holders ni todos los compradores."
+    )
+    if not complete:
+        label += " El tope corta la lectura: lo posterior no se ha leído."
+    return {"buyers": buyers, "receipts": receipts, "unconfirmed": unconfirmed, "label": label, "note": None}
 
 
 def run(c, spec, source, now=None, fetch_pool=None):
@@ -924,28 +991,24 @@ def run(c, spec, source, now=None, fetch_pool=None):
         mint = spec["coin"]
         pool = lookup_pool(c, mint, fetch=fetch_pool)
         buyer_events, buyers_note, buyers_truncated = [], None, False
+        read, complete = None, False
+        tx_cap = L["first_buyers_tx_cap"] if spec.get("scope") == "first_buyers" else L["interval_tx_cap"]
         if spec.get("scope") == "first_buyers":
             data = cached.token_early(mint, L["first_buyers_tx_cap"])
             buyer_events = data.get("events") or []
             buyers_note = data.get("unavailable")
             buyers_truncated = bool(data.get("truncated"))
+            read, complete = data.get("read"), bool(data.get("complete"))
         elif spec.get("scope") == "interval":
             iv = spec["interval"]
             data = cached.token_interval(mint, iv["from_ts"], iv["to_ts"], L["interval_tx_cap"])
             buyer_events = data.get("events") or []
             buyers_note = data.get("unavailable")
             buyers_truncated = bool(data.get("truncated"))
-        # separa verificados de recepciones; solo los buys verificados se proponen para el mapa
-        verified_buyers, receipts = [], []
-        seen_b, seen_r = set(), set()
-        for ev in buyer_events:
-            if ev["kind"] == "swap_buy" and ev["address"] not in seen_b:
-                seen_b.add(ev["address"])
-                verified_buyers.append(ev)
-            elif ev["kind"] == "token_in" and ev["address"] not in seen_r and ev["address"] not in seen_b:
-                seen_r.add(ev["address"])
-                receipts.append(ev)
-        verified_buyers = verified_buyers[: int(L["first_buyers_cap"])]
+            read, complete = data.get("read") or "latest", bool(data.get("complete"))
+        split = split_mint_events(buyer_events, spec.get("scope"), read, complete, tx_cap, L["first_buyers_cap"])
+        verified_buyers, receipts = split["buyers"], split["receipts"]
+        buyers_note = split["note"] if split.get("note") else buyers_note
         for addr in investigated:
             evs = _coin_events_for(packed[addr]["rows"], addr, mint)
             packed[addr]["coin_events"] = evs
@@ -956,14 +1019,16 @@ def run(c, spec, source, now=None, fetch_pool=None):
             "address": mint, "symbol": pool.get("symbol"), "pool": pool.get("pool"),
             "pool_source": pool.get("source"), "axiom": pool.get("axiom"),
             "scope": spec.get("scope"), "interval": spec.get("interval"),
-            "buyers": verified_buyers, "receipts": receipts[: int(L["first_buyers_cap"])],
-            "buyers_truncated": buyers_truncated, "note": buyers_note,
+            "buyers": verified_buyers, "receipts": receipts,
+            "buyer_label": split["label"], "read": read, "from_start": read == "earliest",
+            "buyers_truncated": buyers_truncated or not complete, "note": buyers_note,
             "axiom_note": "Enlace solo si hay un pool devuelto por la base o por el mercado. Sin pool no se fabrica el enlace." if pool.get("axiom") else "Sin pool verificado: no hay enlace de Axiom.",
         }
-        if buyers_truncated:
+        if buyers_truncated or (spec.get("scope") == "first_buyers" and not complete):
             partial = True
-            notes.append("La lectura de la coin está cortada por el tope. No son todos los holders.")
-        if buyers_note:
+        if split.get("label"):
+            notes.append(split["label"])
+        if buyers_note and buyers_note not in notes:
             notes.append(buyers_note)
 
     # coincidencias solo entre wallets del usuario (no contra un servicio)

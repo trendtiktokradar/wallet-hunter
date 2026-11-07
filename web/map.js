@@ -317,15 +317,16 @@
     var coin = st.result && st.result.coin;
     var html = '<div class="mapkicker">Contexto de coin</div><p class="mini">La CA no dispara un listado de holders. Puedes añadir sospechosos, cargar solo los primeros compradores verificados (tope de transacciones) o un intervalo de como máximo 7 días.</p>';
     html += '<div class="mapalias"><input id="mapCa" placeholder="CA de Solana (se respetan mayúsculas)" value="' + esc(st.coin) + '"></div>';
-    html += '<div class="row"><button type="button" class="ghost" id="mapUseCa">Usar esta CA</button><button type="button" class="ghost" id="mapEarly">Primeros compradores</button></div>';
+    html += '<div class="row"><button type="button" class="ghost" id="mapUseCa">Usar esta CA</button><button type="button" class="ghost" id="mapEarly">Leer inicio del mint</button></div>';
     html += '<div class="row" style="margin-top:8px"><label class="mini">Desde <input id="mapFrom" type="date" value="' + esc(st.from) + '"></label><label class="mini">Hasta <input id="mapTo" type="date" value="' + esc(st.to) + '"></label><button type="button" class="ghost" id="mapInterval">Intervalo acotado</button></div>';
     if (coin) {
       html += '<p class="mini" style="margin-top:8px">CA ' + esc(coin.address) + (coin.symbol ? " · " + esc(coin.symbol) : "") + "</p>";
       html += '<p class="mini">' + esc(coin.axiom_note || "") + "</p>";
       if (coin.axiom) html += '<a class="xl" target="_blank" rel="noopener" href="' + esc(coin.axiom) + '">Axiom · pool verificado</a>';
+      if (coin.buyer_label) html += '<p class="mini">' + esc(coin.buyer_label) + "</p>";
       if (coin.note) html += '<p class="mini">' + esc(coin.note) + "</p>";
       if ((coin.buyers || []).length) {
-        html += '<div class="mini" style="margin-top:6px">Compras verificadas en lo leído (no son todos los holders):</div>';
+        html += '<div class="mini" style="margin-top:6px">Compras con programa de swap en lo leído:</div>';
         html += coin.buyers.map(function (b) { return '<div class="mini">' + esc(short(b.address)) + " · " + esc(fecha(b.ts)) + ' <button type="button" class="ghost" data-add="' + esc(b.address) + '">Añadir</button></div>'; }).join("");
       }
       if ((coin.receipts || []).length) {
