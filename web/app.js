@@ -760,7 +760,7 @@
     $("jobsBox").innerHTML = '<div class="box"><h3>Trabajos</h3><div style="overflow:auto"><table class="list"><tr><th>Estado</th><th>Tipo</th><th>Chain</th><th>Direcciones</th><th>Progreso / resultado</th><th>Creado</th><th>Duración</th></tr>' +
       (js.map(function (j) {
         var d = j.finished && j.started ? dur(j.finished - j.started) : j.started ? dur(NOW() - j.started) + "…" : "–";
-        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : j.kind === "connect" ? "🔗 Conexiones" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-tcoin="' + esc(t.c + ":" + t.a) + '">🔎 Abrir análisis' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + (j.kind === "connect" && j.status !== "error" ? ' <button class="ghost" data-ckjob="' + esc(j.id) + '">🔗 ' + (j.status === "done" ? "Ver resultado" : "Ver progreso") + "</button>" : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
+        return '<tr><td><span class="st ' + j.status + '">' + (STL[j.status] || j.status) + "</span></td><td>" + (j.kind === "tokens" ? "Tokens" : j.kind === "connect" ? "🔗 Conexiones" : j.kind === "map" ? "🗺 Mapa" : "Wallets") + "</td><td>" + esc(j.chain === "auto" ? "auto" : chainName(j.chain)) + '</td><td class="addr">' + j.items.slice(0, 4).map(function (a) { return esc(short(a)); }).join("<br>") + (j.items.length > 4 ? "<br>+" + (j.items.length - 4) : "") + "</td><td>" + esc(j.message || j.progress || "") + (j.status === "done" && j.kind === "tokens" ? " " + j.items.map(function (a) { var t = findTokenByCA(a); return t ? '<button class="ghost" data-tcoin="' + esc(t.c + ":" + t.a) + '">🔎 Abrir análisis' + (j.items.length > 1 ? " " + esc(t.sy || short(t.a)) : "") + "</button>" : ""; }).join(" ") : "") + (j.kind === "connect" && j.status !== "error" ? ' <button class="ghost" data-ckjob="' + esc(j.id) + '">🔗 ' + (j.status === "done" ? "Ver resultado" : "Ver progreso") + "</button>" : "") + "</td><td>" + fmtDate(j.created) + "</td><td>" + d + "</td></tr>";
       }).join("") || '<tr><td colspan="7" class="muted">Sin trabajos todavía.</td></tr>') + "</table></div></div>";
   }
   function renderFavExtra() {
@@ -1180,7 +1180,17 @@
 
   // ---------------------------------------------------------------- render general
   function renderAll() {
-    if (!D) return;
+    if (!D) {
+      if (S.tab === "map" && $("tab-map")) {
+        document.body.classList.add("maptab");
+        document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === "map"); });
+        ["wallets", "smartx", "bundles", "tokens", "conn", "scan", "jobs", "map"].forEach(function (x) {
+          var el = $("tab-" + x); if (el) el.classList.toggle("hide", x !== "map");
+        });
+        if (window.WHMap) window.WHMap.show();
+      }
+      return;
+    }
     tokScanCheck(); resolvePendingCoin(); fillCoins(); renderCoinHead();
     renderSources(); renderCards(); renderJobs();
     $("updated").textContent = "Datos: " + ago(D.generated) + (BOX_OK ? " · box en directo" : "");
@@ -1189,7 +1199,8 @@
     // análisis por coin dentro de Tokens: se muestran las mismas secciones (tabla de Wallets, Bundles, Clusters, Smart) filtradas por coinTok()
     if (tv) show = { wallets: "wallets", bundles: "bundles", clusters: "conn", smartx: "smartx" }[S.tsub] || "wallets";
     document.body.classList.toggle("tokview", tv);
-    ["wallets", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].forEach(function (x) { $("tab-" + x).classList.toggle("hide", !(x === show || (x === "wallets" && show === "favs"))); });
+    document.body.classList.toggle("maptab", t === "map");
+    ["wallets", "smartx", "bundles", "tokens", "conn", "scan", "jobs", "map"].forEach(function (x) { var el = $("tab-" + x); if (el) el.classList.toggle("hide", !(x === show || (x === "wallets" && show === "favs"))); });
     if (show === "wallets" || show === "favs") { renderFavExtra(); renderTable(show === "favs"); }
     if (show === "bundles") renderBundles();
     if (show === "smartx") renderSmartx();
@@ -1198,6 +1209,7 @@
     if (show === "conn") { if (tv) { $("connSeg").classList.add("hide"); $("connCheck").classList.add("hide"); $("connBox").classList.remove("hide"); renderClusters(); } else renderConn(); }
     if (t === "scan" && !document.activeElement.closest("#scanBox")) renderScan();
     if (t === "jobs") renderJobs();
+    if (t === "map" && window.WHMap) window.WHMap.show();
   }
   function goto(tab) {
     S.tab = tab; document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === tab); });
@@ -1205,6 +1217,10 @@
     if (tab === "scan") renderScan();
     if (tab === "tokens" || (location.hash.indexOf("#tokens") === 0 && (tab === "wallets" || tab === "favs"))) writeHash();
     else if (location.hash.indexOf("#tokens") === 0) history.replaceState(null, "", location.pathname + location.search + "#" + tab);
+    if (tab === "map") {
+      var fx = /mapfixture(?:=[a-z]+)?/.exec(location.hash || "");
+      history.replaceState(null, "", location.pathname + location.search + "#map" + (fx ? "&" + fx[0] : ""));
+    } else if ((location.hash || "").indexOf("#map") === 0) history.replaceState(null, "", location.pathname + location.search + (tab === "wallets" ? "" : "#" + tab));
     renderAll(); window.scrollTo(0, 0);
   }
   function toggleFav(k) {
@@ -1363,10 +1379,17 @@
     } else if (h.indexOf("check=") === 0) { S.tab = "conn"; CK.sub = "check"; CK.prefill = { ws: parseWs(h.slice(6)), chain: "auto" }; }
     else if (h === "clusters") { S.tab = "conn"; CK.sub = "clusters"; }
     else if (h.indexOf("addfav=") === 0) { S.tab = "favs"; S.pendingAddFav = h.slice(7); }
+    else if (h === "map" || h.indexOf("map&") === 0 || h.indexOf("mapfixture") === 0) S.tab = "map";
     else if (["wallets", "favs", "smartx", "bundles", "tokens", "conn", "scan", "jobs"].indexOf(h) >= 0) S.tab = h;
   }
   try { var ts0 = JSON.parse(localStorage.getItem("wh_tscan") || "null"); if (ts0 && ts0.ca && NOW() - ts0.t0 < 7200) { S.tscan = ts0; tokPoll(); } else localStorage.removeItem("wh_tscan"); } catch (er) { }
   document.addEventListener("keydown", function (e) { if (e.key === "Enter" && e.target && e.target.id === "tokQ") { e.preventDefault(); tokSearch(); } if (e.key === "Enter" && e.target && e.target.id === "tokPin") { e.preventDefault(); tokScan(); } });
   if (location.hash) { readHash(); setTimeout(function () { goto(S.tab); }, 300); }
+  window.WH = {
+    api: api, needPin: needPin, esc: esc, toast: toast, short: short, fmtDate: fmtDate,
+    box: function () { return BOX; }, boxOk: function () { return BOX_OK; },
+    aliases: function () { return ALIASES; }, setAliases: setAliases,
+    groups: function () { return GROUPS; }, setGroups: setGroups
+  };
   function runPendingAddFav() { var k = S.pendingAddFav; if (!k || !D) return; S.pendingAddFav = null; history.replaceState(null, "", location.pathname + location.search + "#favs"); if (FAVS[k]) { toast("Ya está en Mis wallets"); return; } addFavFromAlert(k); }
 })();

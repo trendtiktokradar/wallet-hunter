@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS blocklist(chain TEXT, address TEXT, token TEXT, added
 CREATE TABLE IF NOT EXISTS checks(id TEXT PRIMARY KEY, created INTEGER, chain TEXT, wallets TEXT, status TEXT, result TEXT, credits INTEGER, summary TEXT, max_score INTEGER, error TEXT);
 CREATE TABLE IF NOT EXISTS aliases(chain TEXT, address TEXT, alias TEXT, updated INTEGER, PRIMARY KEY(chain, address));
 CREATE TABLE IF NOT EXISTS svc_cache(chain TEXT, address TEXT, hub INTEGER, n INTEGER, distinct_cp INTEGER, span_h REAL, why TEXT, ts INTEGER, PRIMARY KEY(chain, address));
+-- mapa de wallets: lecturas acotadas reutilizables, resultados privados y hipótesis (nunca van a data.json)
+CREATE TABLE IF NOT EXISTS map_cache(chain TEXT, address TEXT, kind TEXT, sig TEXT, payload TEXT, ts INTEGER, PRIMARY KEY(chain, address, kind, sig));
+CREATE TABLE IF NOT EXISTS map_runs(id TEXT PRIMARY KEY, created INTEGER, spec TEXT, status TEXT, result TEXT, error TEXT);
+CREATE TABLE IF NOT EXISTS map_hypotheses(id TEXT PRIMARY KEY, created INTEGER, chain TEXT, wallet TEXT, counterpart TEXT, motive TEXT, evidence TEXT);
 """
 
 _local = threading.local()

@@ -8,6 +8,8 @@
   POST /api/delete    {pin, op: wallets|token|plan_token, items:[{chain,address}], chain, token, block}
   POST /api/connect   {pin, wallets, chain}                  -> {id}  (comprobación de conexiones: trabajo 'connect')
   POST /api/checks    {pin, op: list|get|status|delete, id}  (comprobaciones guardadas, privadas)
+  POST /api/map       {pin, op: limits|search|status|hypothesis|hypotheses, ...}
+                      search encola un trabajo 'map' (fondeo acotado, no un monitor). El resultado no se publica.
   POST /api/settings  {pin, alerts?}      -> ajustes actuales + estado de Telegram + coste estimado de la vigilancia + fondeadores
   POST /api/telegram  {pin, op: status|detect|test}   (detecta tu chat con getUpdates; «test» manda un mensaje corto)
   POST /api/alerts    {pin}               -> últimas alertas (kind: inflow | dormant | funder, data con los detalles)
@@ -32,12 +34,12 @@ def start_connect_worker():
         c = db.connect()
         while True:
             try:
-                job = jobs.next_pending(c, kinds=("connect",))
+                job = jobs.next_pending(c, kinds=("connect", "map"))
                 while job:
                     WAKE.set()
                     jobs.run_job(c, job)
                     WAKE.set()   # el bucle republica data.json (Trabajos)
-                    job = jobs.next_pending(c, kinds=("connect",))
+                    job = jobs.next_pending(c, kinds=("connect", "map"))
             except Exception:
                 log.exception("hilo de conexiones")
             CONNECT_WAKE.wait(30)
@@ -179,6 +181,37 @@ class H(BaseHTTPRequestHandler):
                 log.info("borrado desde la web: %s", {k: v for k, v in r.items() if k != "backup"})
                 WAKE.set()   # el bucle detecta el cambio y republica data.json
                 return self._send(200, {"ok": True, "result": r})
+            if p == "/api/map":
+                from . import walletmap
+                op = req.get("op") or "search"
+                if op == "limits":
+                    return self._send(200, {"ok": True, "limits": walletmap.limits(), "rule": walletmap.coincidence_rule(), "helius": walletmap.helius_ready()})
+                if op == "search":
+                    spec = walletmap.clean_request(req)
+                    if not walletmap.helius_ready():
+                        return self._send(503, {"error": "helius_unavailable", "msg": "El box no tiene HELIUS_API_KEY. El mapa no inventa datos. La key se configura solo en el servidor y hay que reiniciar el servicio."})
+                    jid = jobs.enqueue(c, "map", "solana", spec, origin="web")
+                    walletmap.save_run(c, jid, spec, "pending")
+                    CONNECT_WAKE.set(); WAKE.set()
+                    return self._send(200, {"ok": True, "id": jid, "wallets": len(spec["wallets"]), "limits": walletmap.limits()})
+                if op == "status":
+                    cid = str(req.get("id") or "")[:40]
+                    j = c.execute("SELECT status, progress, message FROM jobs WHERE id=? AND kind='map'", (cid,)).fetchone()
+                    if not j:
+                        return self._send(404, {"error": "no encontrada"})
+                    out = {"ok": True, "id": cid, "status": j["status"], "progress": j["progress"], "message": j["message"]}
+                    run = walletmap.get_run(c, cid)
+                    if run and run.get("result"):
+                        out["result"] = run["result"]
+                    if j["status"] == "error":
+                        out["error"] = (run or {}).get("error") or j["message"]
+                    return self._send(200, out)
+                if op == "hypothesis":
+                    hid = walletmap.save_hypothesis(c, req.get("wallet"), req.get("counterpart"), req.get("motive"), req.get("evidence") if isinstance(req.get("evidence"), dict) else {})
+                    return self._send(200, {"ok": True, "id": hid, "hypotheses": walletmap.list_hypotheses(c)})
+                if op == "hypotheses":
+                    return self._send(200, {"ok": True, "hypotheses": walletmap.list_hypotheses(c)})
+                raise ValueError("op no válida")
             if p == "/api/connect":
                 from . import connect
                 chain, ws = connect.clean_wallets(req.get("wallets") or req.get("items") or "", req.get("chain") or "auto")

@@ -10,16 +10,22 @@ MAX_ITEMS = 25
 
 
 def enqueue(c, kind, chain, items, origin="cli", job_id=None):
-    if kind not in ("tokens", "wallets", "connect"):
+    if kind not in ("tokens", "wallets", "connect", "map"):
         raise ValueError("tipo inválido")
     if chain not in CHAINS and chain not in ("auto", "evm"):
         raise ValueError("chain inválida")
-    items = [i for i in items if i][:MAX_ITEMS]
-    if not items:
-        raise ValueError("no hay direcciones válidas")
+    if kind == "map":
+        if not isinstance(items, dict):
+            raise ValueError("spec de mapa inválida")
+        blob = items
+    else:
+        items = [i for i in items if i][:MAX_ITEMS]
+        if not items:
+            raise ValueError("no hay direcciones válidas")
+        blob = items
     jid = job_id or time.strftime("%y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:4]
     c.execute("INSERT OR IGNORE INTO jobs(id,created,kind,chain,items,status,progress,origin) VALUES(?,?,?,?,?,?,?,?)",
-              (jid, int(time.time()), kind, chain, json.dumps(items), "pending", "en cola", origin))
+              (jid, int(time.time()), kind, chain, json.dumps(blob), "pending", "en cola", origin))
     c.commit()
     return jid
 
@@ -65,9 +71,18 @@ def run_job(c, job, on_progress=None):
                 connect.save(c, jid, job["chain"], items, "error", error=str(e)[:300])
                 raise
             sc = None
+        elif job["kind"] == "map":
+            from . import walletmap
+            try:
+                results.append(walletmap.run_job(c, job, prog))
+            except Exception as e:
+                log.exception("mapa %s", jid)
+                walletmap.save_run(c, jid, items if isinstance(items, dict) else {}, "error", error=str(e)[:300])
+                raise
+            sc = None
         else:
             sc = Scanner(c, progress=prog)
-        if job["kind"] == "connect":
+        if job["kind"] in ("connect", "map"):
             pass
         elif job["kind"] == "tokens":
             for i, ca in enumerate(items, 1):

@@ -18,6 +18,7 @@
     <button data-tab="bundles">Bundles</button>
     <button data-tab="tokens">Tokens</button>
     <button data-tab="conn">Conexiones</button>
+    <button data-tab="map">Mapa de Wallets</button>
     <button data-tab="scan">Escanear / Añadir</button>
     <button data-tab="jobs">Trabajos <span id="jobBadge" class="badge hide"></span></button>
   </nav>
@@ -75,6 +76,47 @@
     <div id="connCheck"></div>
     <div id="connBox" class="hide"></div>
   </section>
+  <section id="tab-map" class="tab hide">
+    <div class="mappage">
+      <div class="maphead">
+        <h1 id="mapTitle">Mapa de Wallets</h1>
+        <p class="muted" id="mapLead">Pega una o varias wallets, colócalas en el mapa y busca conexiones solo cuando quieras. Quitar una del mapa no borra su alias.</p>
+      </div>
+      <div id="mapBanner"></div>
+      <div class="mapmodes">
+        <button type="button" id="mapModeW" class="on">Por wallets</button>
+        <button type="button" id="mapModeC">Por coin (CA)</button>
+      </div>
+      <div id="mapCoin" class="mapcoin hide"></div>
+      <div class="mappaste">
+        <textarea id="mapInput" rows="2" placeholder="Pega una o varias wallets" spellcheck="false" autocomplete="off"></textarea>
+        <div class="mapacts">
+          <button type="button" id="mapAdd" class="primary">Añadir al mapa</button>
+          <button type="button" id="mapSearch" class="ghost">Buscar conexiones</button>
+        </div>
+      </div>
+      <div id="mapChips" class="mapchips"></div>
+      <p class="mini" id="mapChipNote">La × solo quita la wallet de este mapa. El alias guardado en el box se conserva.</p>
+      <div class="maplayout">
+        <div class="mapgraph">
+          <div class="mapghead">
+            <div><b>Mapa</b><div class="mini">Arrastra las burbujas. La rueda o los botones hacen zoom.</div></div>
+            <div class="mapzoom">
+              <button type="button" id="mapZin" title="Acercar">+</button>
+              <button type="button" id="mapZout" title="Alejar">−</button>
+              <button type="button" id="mapCenter">Centrar</button>
+            </div>
+          </div>
+          <svg id="mapSvg" viewBox="0 0 860 480" role="img" aria-label="Grafo de wallets"></svg>
+          <div id="mapLegend" class="maplegend"></div>
+          <p class="mini" id="mapCoverage"></p>
+        </div>
+        <aside id="mapSide" class="mapside"></aside>
+      </div>
+      <div id="mapGroups" class="mapgroups"></div>
+      <p class="mini" id="mapStatus"></p>
+    </div>
+  </section>
   <section id="tab-scan" class="tab hide"><div id="scanBox"></div></section>
   <section id="tab-jobs" class="tab hide"><div id="jobsBox"></div></section>
 </main>
@@ -86,5 +128,6 @@
 
 <script src="config.js?v=__V__"></script>
 <script src="app.js?v=__V__"></script>
+<script src="map.js?v=__V__"></script>
 </body>
 </html>

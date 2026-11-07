@@ -95,5 +95,28 @@
     "hub_min_txs": 1000,
     "hub_hours": 168,
     "max_nodes": 45
+  },
+  "map": {
+    "window_days": 30,
+    "max_wallets": 12,
+    "tx_cap": 100,
+    "funding_cap": 8,
+    "min_native_sol": 0.05,
+    "movement_cap": 40,
+    "max_hops": 2,
+    "max_hop_lookups": 8,
+    "max_pages": 3,
+    "cache_hours": 12,
+    "first_buyers_tx_cap": 200,
+    "first_buyers_cap": 12,
+    "interval_tx_cap": 300,
+    "interval_max_days": 7,
+    "coincidence": {
+      "min_distinct_tokens": 8,
+      "min_overlap_tokens": 5,
+      "min_overlap_ratio": 0.35,
+      "near_window_s": 600,
+      "popular_min_wallets": 4
+    }
   }
 }

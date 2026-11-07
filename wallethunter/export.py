@@ -74,6 +74,11 @@ def build(c=None):
         if j["kind"] == "connect":   # privado: en el json público solo la forma corta; el resultado lo sirve el box con PIN
             j["items"] = [a[:4] + "…" + a[-4:] for a in j["items"]]
             j["message"] = (j["message"] or "").split(":")[0] if j["status"] == "done" else j["message"]
+        elif j["kind"] == "map":
+            spec = j["items"] if isinstance(j["items"], dict) else {}
+            ws = spec.get("wallets") or []
+            j["items"] = [a[:4] + "…" + a[-4:] for a in ws if isinstance(a, str)]
+            j["message"] = "Mapa bajo demanda" if j["status"] == "done" else j["message"]
     st = {"total": len(wallets), "pending": sum(1 for w in wallets if w["st"] == "pending"), "error": sum(1 for w in wallets if w["st"] == "error"),
           "bots_pre": sum(1 for w in wallets if w["pf"]), "fund_sync": sum(1 for w in wallets if "fondeo_sync" in w["tg"]), "smart": sum(1 for w in wallets if "smart" in w["tg"]),
           "bots": sum(1 for w in wallets if "bot" in w["tg"]), "snipers": sum(1 for w in wallets if "sniper" in w["tg"]),

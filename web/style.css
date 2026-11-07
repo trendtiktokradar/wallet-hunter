@@ -307,3 +307,51 @@ button.sm{padding:5px 10px;font-size:12.5px}
   .toksearch input{flex-basis:100%}
   .toksearch button{width:100%}
 }
+body.maptab .cards,body.maptab .chainbar,body.maptab #coinHead{display:none}
+.mappage{max-width:1280px}
+.mappage h1{margin:2px 0 4px;font-size:26px;font-weight:650;letter-spacing:-.2px}
+.maphead{margin-bottom:10px}
+.mapbanner{border-radius:8px;padding:8px 12px;margin:0 0 12px;font-size:12.5px}
+.mapbanner.info{background:#13283f;border:1px solid #24507a;color:#d6e6f8}
+.mapbanner.warn{background:#3a2a12;border:1px solid #a16207;color:#fde68a}
+.mapmodes{display:flex;gap:8px;margin-bottom:10px}
+.mapmodes button,.mapzoom button,.mapside .segtabs button{background:#13283f;border:1px solid #2c4a6e;border-radius:8px;padding:6px 12px;cursor:pointer;color:#d5e4f7}
+.mapmodes button.on,.mapside .segtabs button.on{background:#1d4ed8;border-color:#3b82f6;color:#fff}
+.mappaste{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:stretch}
+.mappaste textarea{width:100%;min-height:64px;resize:vertical;background:#122033;border:1px solid #2a4668;border-radius:10px;padding:10px 12px;font-family:ui-monospace,monospace}
+.mapacts{display:flex;flex-direction:column;gap:8px}
+.mapacts .primary,.mapacts .ghost{min-width:180px}
+.mapchips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
+.mapchip{display:inline-flex;align-items:center;gap:6px;background:#17304c;border:1px solid #3b82f6;color:#e8f2ff;border-radius:999px;padding:4px 6px 4px 10px;font-size:12.5px}
+.mapchip button{background:transparent;border:0;color:#9fb4ce;cursor:pointer;font-size:14px;line-height:1;padding:0 4px}
+.mapchip button:hover{color:#fff}
+.maplayout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.8fr);gap:12px;margin-top:8px}
+.mapgraph,.mapside,.mapcoin,.mapgroups{background:#121e30;border:1px solid #243856;border-radius:12px;padding:12px}
+.mapghead{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px}
+.mapzoom{display:flex;gap:6px}
+.mapzoom button{min-width:36px;font-size:16px;line-height:1}
+#mapSvg{width:100%;height:460px;background:#10192a;border-radius:10px;touch-action:none;cursor:grab}
+#mapSvg text{font-family:Inter,system-ui,sans-serif}
+.maplegend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;color:#9fb0c8;font-size:11.5px}
+.maplegend i{display:inline-block;width:18px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.mapside h2{margin:2px 0 6px;font-size:22px}
+.mapkicker{color:#8ea2bd;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.segtabs{display:flex;gap:6px;margin:10px 0}
+.maprow{border:1px solid #243856;border-radius:10px;padding:8px 10px;margin:8px 0;background:#162536}
+.maprow .amt{font-weight:700}
+.maprow .in{color:#5eead4}
+.maprow .out{color:#f0a8a8}
+.mapbadge{display:inline-block;background:#134e4a;color:#ccfbf1;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:650}
+.mapcoinbox{background:#10261f;border:1px solid #1f6b57;border-radius:10px;padding:8px 10px;margin-top:8px}
+.mapalias{display:flex;gap:8px;margin:8px 0}
+.mapalias input,.mapgroups input,.mapcoin input{flex:1;background:#122033;border:1px solid #2a4668;border-radius:8px;padding:7px 8px}
+.mapgroups{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.mapgroups h3{width:100%;margin:0 0 4px;font-size:14px}
+#mapStatus{min-height:1.2em}
+@media (max-width:860px){
+  .mappaste,.maplayout{grid-template-columns:1fr}
+  .mapacts{flex-direction:row}
+  .mapacts .primary,.mapacts .ghost{flex:1;min-width:0}
+  #mapSvg{height:320px}
+  .mappage h1{font-size:22px}
+}
