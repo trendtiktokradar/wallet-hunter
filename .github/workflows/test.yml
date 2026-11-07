@@ -1,0 +1,29 @@
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: unittest sin red ni secretos
+        env:
+          HELIUS_API_KEY: ""
+          ETHERSCAN_API_KEY: ""
+          BLOCKSCOUT_API_KEY: ""
+          WH_PIN: ""
+          TELEGRAM_BOT_TOKEN: ""
+          GITHUB_TOKEN_TIKTOK_RADAR: ""
+          WH_TUNNEL: "0"
+        run: python3 -m unittest discover -s tests -q
+      - name: reglas de etiquetas y escape
+        run: node tests/ui_rules.test.js

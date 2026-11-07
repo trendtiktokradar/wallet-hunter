@@ -60,14 +60,34 @@ python3 -m wallethunter status
 python3 -m unittest discover -s tests                   # tests con datos sintéticos
 python3 -m http.server 8790 -d web                      # vista local
 ```
-Servicio (API + túnel + cola + alertas + publicación):
+Arranque **por defecto** (solo bajo demanda: API, trabajos `map`/`connect` creados después del arranque, y túnel):
 ```bash
-scripts/service.sh start     # nohup setsid scripts/loop.sh (relanza Python si se cae; lo "en curso" vuelve a la cola)
-scripts/service.sh status
+scripts/service.sh start          # o ensure. No usa scripts/loop.sh
+scripts/service.sh status         # curl http://127.0.0.1:18795/health  → "mode": "on-demand"
 scripts/service.sh stop
+scripts/service.sh publish-link   # una vez, cuando el túnel ya tiene URL: solo box.json, sin force-push
 ```
-Si el box se reinicia hay que volver a lanzar `scripts/service.sh start` (igual que TikTok Radar). Tras añadir una key nueva
-(tarjeta segura) hay que reiniciar el servicio (`stop` + `start`) para que la vea.
+Eso no arranca vigilancia, Telegram, la publicación periódica ni la cola de escaneos que ya estuviera pendiente.
+`WH_TUNNEL=0` deja la API solo en `127.0.0.1`. Hace falta `HELIUS_API_KEY` en el entorno para leer la cadena, el PIN (`set-pin` o `WH_PIN`) y, para `publish-link`, `GITHUB_TOKEN_TIKTOK_RADAR` y `cloudflared` en `~/.local/bin/cloudflared`.
+
+El bucle antiguo (cola, vigilancia con dormidas activas por defecto, Telegram si hay token, publicación periódica) sigue existiendo y **no** es el arranque:
+```bash
+scripts/service.sh full           # scripts/loop.sh → python3 -m wallethunter loop
+```
+
+Si el box se reinicia hay que volver a lanzar el modo que se quiera. Tras añadir una key nueva
+(tarjeta segura) hay que reiniciar el proceso (`stop` + `start`) para que la vea.
+
+Para que el **Mapa de Wallets** consulte la cadena hace falta este código en el equipo del servicio (`/workspace/solana-wallet-hunter`), no en el navegador:
+
+1. `scripts/service.sh start`
+2. Esperar a que `status` muestre la URL `trycloudflare.com`.
+3. `scripts/service.sh publish-link` para que el panel público encuentre el túnel.
+4. PIN ya configurado. Alias, grupos, hipótesis y la búsqueda lo piden.
+
+Sin `HELIUS_API_KEY` el botón dice que el análisis no está disponible. No inventa el grafo.
+
+Publicar la **página** (solo estáticos) es el workflow «Publicar panel en GitHub Pages»: entra lo que está en `main` bajo `web/`. El mapa no queda visible en https://trendtiktokradar.github.io/wallet-hunter/ hasta que ese cambio se fusiona en `main`. Fusionar no enciende el box.
 
 Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbrales de bundles/clusters, límites de cada API, alertas).
 
@@ -108,7 +128,7 @@ Ajustes en `config.json` (máx. wallets por token, páginas de historial, umbral
 - Casilla opcional **«No volver a añadir en futuros escaneos»** (desmarcada por defecto): guarda la wallet en `blocklist`
   (por coin; `*` si no tenía coin) y los re-escaneos de esa coin la saltan. Añadirla a mano (Escanear → Wallets sueltas) la desbloquea.
 - Antes de cada borrado se copia la base de datos a `data/backups/auto-<fecha>-<motivo>.db` (se guardan las 10 últimas).
-  Para restaurar: `scripts/service.sh stop`, copiar la copia sobre `state/wallethunter.db`, `scripts/service.sh start`.
+  Para restaurar: `scripts/service.sh stop`, copiar la copia sobre `state/wallethunter.db`, y arrancar otra vez (`start` es solo bajo demanda; `full` es el bucle antiguo).
 - Desde la terminal: `python3 scripts/cleanup_tokens.py [--block] <chain>:<CA>` (misma lógica).
 
 ## Conexiones entre wallets (pestaña Conexiones → «🔍 Comprobar conexiones»)
@@ -169,6 +189,22 @@ Que dos wallets usen el mismo servicio (el solver de Relay les mandó SOL, las d
   - un fondeador que es un servicio (o un hub) **no une wallets** en clusters, ni directamente ni a 2 saltos;
   - se guarda aparte: el detalle de la wallet muestra «Servicios compartidos», y Conexiones → Clusters muestra cuántos vínculos se ignoraron y qué servicios (mismo interruptor).
 - La vigilancia de fondeadores tampoco vigila servicios.
+
+## Mapa de Wallets (pestaña «Mapa de Wallets»)
+Exploración **bajo demanda**. No vigila, no manda alertas y no recorre el historial entero.
+El grafo de la web solo muestra direcciones pegadas por ti o devueltas por el box. Si el box está apagado o falta `HELIUS_API_KEY`, la pestaña lo dice y no inventa relaciones.
+
+- **Por wallets**: pegas una o varias direcciones de Solana (se respetan mayúsculas y minúsculas; una EVM no entra aquí). «Añadir al mapa» solo crea chips. «Buscar conexiones» encola un trabajo `map` con PIN (`POST /api/map`).
+- **Fondeo**: entradas de SOL ≥ 0,05 que no forman parte de un swap, dentro de como máximo 30 días y 100 transferencias por wallet, hasta 8 contrapartes y 3 páginas. Se puede repetir un salto atrás (tope 8 orígenes extra, máximo 2 saltos).
+- **Movimientos**: las transferencias de esa misma lectura, con fecha, importe y enlace a Solscan cuando la referencia es una firma real.
+- **Servicios y exchanges**: solo si están en `services.py` (con su fuente), en `cex.py` o en la caché de un hub ya medido. Si no hay fuente, el nodo queda «sin identificar». Un nodo gris no tiene dueño. Compartir un puente, un bot o un exchange no es propiedad común.
+- **Por coin**: la CA es el contexto. «Primeros compradores» lee como máximo 200 transacciones antiguas del mint (no todos los holders). Un intervalo no pasa de 7 días ni de 300 transacciones recientes. Un swap solo se marca verificado si la transacción mueve el token y la contrapartida en sentidos opuestos. Recibir el token no es comprarlo. El enlace de Axiom se arma solo con un pool que ya esté en la base o que devuelva el mercado; sin pool no hay enlace.
+- **Coincidencia alta** (hipótesis, no un score y no «mismo dueño»): en lo revisado, cada wallet tiene al menos 8 coins distintas con swap verificado, comparten al menos 5 y al menos el 35 % de la muestra más pequeña, después de quitar SOL, stables y las coins que salgan en 4 o más wallets de esa búsqueda, y además hay una contraparte que no sea servicio ni exchange. Si la muestra no llega, no hay badge. El detalle de las coins está detrás de un botón. «Guardar como hipótesis» escribe en el box, no en el `data.json` público.
+- **Alias y grupos**: los mismos `POST /api/aliases` y `POST /api/groups` de siempre. La × del chip solo quita la wallet de la vista.
+- **Caché**: la lectura de una dirección con los mismos topes se reutiliza 12 horas (`map_cache`). No guarda errores.
+- **Vacío**: «no apareció en el intervalo revisado». No es prueba de que no exista fuera.
+
+La pestaña sale en GitHub Pages al publicar `web/` (abajo). El trabajo `map` solo existe cuando el box corre **este** código.
 
 ## 🧠 Smart money cruzado (pestaña «🧠 Smart cruzado»)
 Wallets que fueron **compradoras tempranas** (top 50 de compradores, `smartx.early_rank`) **y rentables** (PnL > 0 en esa coin,
